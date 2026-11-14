@@ -38,11 +38,14 @@ jobs:
         working-directory: rust-kernel
         run: |
           cargo fmt --all -- --check
+          rustfmt --edition 2021 --check research/cr3_transition_gate.rs
           cargo clippy --release --offline -- -D warnings
       - name: Test serial diagnostic failure paths on host
         run: make rust-serial-test
       - name: Test paging mode validator on host
         run: make rust-paging-mode-test
+      - name: Test fail-closed transition gate on host
+        run: make rust-transition-gate-test
       - name: Install emulator and ISO tools
         shell: bash
         run: |
