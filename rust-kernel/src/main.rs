@@ -3,6 +3,13 @@
 #![no_main]
 #![deny(unsafe_op_in_unsafe_fn)]
 
+// Feature-only stack smoke is separate from fatal fault-injection runs.
+#[cfg(all(
+    feature = "transition-stack-smoke",
+    any(feature = "fault-ud", feature = "fault-pf", feature = "fault-df")
+))]
+compile_error!("transition-stack-smoke cannot be combined with fault injection modes.");
+
 // Each fault-injection feature deliberately terminates boot with its fault.
 // Combining modes would make the observed fault depend on execution order.
 #[cfg(any(
@@ -25,6 +32,8 @@ mod kernel_state;
 mod memory;
 mod paging_mode;
 mod serial;
+#[cfg(feature = "transition-stack-smoke")]
+mod transition_stack;
 
 use core::arch::asm;
 use core::panic::PanicInfo;
@@ -179,6 +188,17 @@ fn run_kernel(state: kernel_state::KernelState<16>) -> ! {
         halt_forever();
     }
     serial_write("MEMORY: boot reservation retained after initialization\n");
+
+    #[cfg(feature = "transition-stack-smoke")]
+    {
+        // SAFETY: Feature-only QEMU probe on the BSP, interrupts disabled,
+        // while Limine's original writable kernel-image mappings remain live.
+        if unsafe { transition_stack::probe_inherited_mappings() }.is_err() {
+            serial_write("ERROR: transition stack page probe failed\n");
+            halt_forever();
+        }
+        serial_write("STACK: four aligned BSS pages writable under inherited mappings\n");
+    }
 
     #[cfg(feature = "fault-ud")]
     {

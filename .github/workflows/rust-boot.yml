@@ -43,6 +43,8 @@ jobs:
         run: make rust-serial-test
       - name: Test paging mode validator on host
         run: make rust-paging-mode-test
+      - name: Test dedicated transition-stack range checks on host
+        run: make rust-transition-stack-test
       - name: Install emulator and ISO tools
         shell: bash
         run: |
@@ -87,6 +89,33 @@ jobs:
             echo "Normal boot unexpectedly ran the optional ownership smoke test" >&2
             exit 1
           fi
+      - name: Feature-gated transition stack BSS probe in QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd rust-kernel && cargo clippy --release --offline --features transition-stack-smoke -- -D warnings
+          cd ..
+          make rust-iso RUST_FEATURES="--features transition-stack-smoke"
+          log="build/embers-stack-smoke-${{ matrix.profile_name }}.log"
+          set +e
+          timeout --signal=TERM --kill-after=2s 20s \
+            qemu-system-x86_64 -cpu "${{ matrix.cpu_model }}" -m 256M \
+              -cdrom build/embers-rust.iso -display none \
+              -serial "file:$log" -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          echo "QEMU stack smoke exit status: $status"
+          cat "$log"
+          if [[ "$status" -ne 124 && "$status" -ne 0 ]]; then
+            echo "Feature-gated stack probe failed to run" >&2
+            exit 1
+          fi
+          if grep -Fq "ERROR:" "$log"; then
+            echo "Feature-gated stack probe reported an error" >&2
+            exit 1
+          fi
+          grep -Fq "STACK: four aligned BSS pages writable under inherited mappings" "$log"
+          grep -Fq "READY: Embers Rust no_std entry reached." "$log"
       - name: Preserve serial and exception logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -95,6 +124,7 @@ jobs:
           path: |
             build/embers-rust-serial-${{ matrix.profile_name }}.log
             build/embers-rust-debug-${{ matrix.profile_name }}.log
+            build/embers-stack-smoke-${{ matrix.profile_name }}.log
           if-no-files-found: ignore
 
   # Preserve the required status name while requiring every matrix lane.

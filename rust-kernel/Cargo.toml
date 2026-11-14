@@ -16,6 +16,7 @@ fault-ud = []
 fault-pf = []
 fault-df = []
 boot-ownership-smoke = []
+transition-stack-smoke = []
 
 [dependencies]
 

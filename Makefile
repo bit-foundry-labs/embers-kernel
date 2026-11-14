@@ -80,3 +80,10 @@ rust-paging-research-test:
 	./build/embers-page-walk-tests
 	cd rust-kernel && rustc --edition=2021 --test tests/page_research_integration.rs -o ../build/embers-page-integration-tests
 	./build/embers-page-integration-tests
+
+# Host-only numeric checks for future dedicated 16 KiB transition-stack storage.
+.PHONY: rust-transition-stack-test
+rust-transition-stack-test:
+	mkdir -p build
+	rustc --edition=2021 --test rust-kernel/src/transition_stack.rs -o build/embers-transition-stack-tests
+	./build/embers-transition-stack-tests
