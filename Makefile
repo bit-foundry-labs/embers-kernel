@@ -89,7 +89,7 @@ rust-transition-stack-test:
 	mkdir -p build
 	rustc --edition=2021 --test rust-kernel/src/transition_stack.rs -o build/embers-transition-stack-tests
 	./build/embers-transition-stack-tests
-# QMP host-only parser/4 KiB page walk rejection tests (no guest memory access).
+# QMP host-only all-LOAD segment coverage/rejection tests (no guest memory access).
 .PHONY: rust-active-pte-test
 rust-active-pte-test:
 	python3 scripts/check_active_pte_qmp.py --self-test
