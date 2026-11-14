@@ -193,10 +193,18 @@ fn run_kernel(state: kernel_state::KernelState<16>) -> ! {
     {
         // SAFETY: Feature-only QEMU probe on the BSP, interrupts disabled,
         // while Limine's original writable kernel-image mappings remain live.
-        if unsafe { transition_stack::probe_inherited_mappings() }.is_err() {
-            serial_write("ERROR: transition stack page probe failed\n");
-            halt_forever();
-        }
+        let base = match unsafe { transition_stack::probe_inherited_mappings() } {
+            Ok(base) => base,
+            Err(_) => {
+                serial_write("ERROR: transition stack page probe failed\n");
+                halt_forever();
+            }
+        };
+        // Feature-only research diagnostic; never include the address in
+        // a production boot log or treat it as frame ownership evidence.
+        serial_write("STACK: static BSS virtual base = ");
+        serial_write_hex(base);
+        serial_write("\n");
         serial_write("STACK: four aligned BSS pages writable under inherited mappings\n");
     }
 

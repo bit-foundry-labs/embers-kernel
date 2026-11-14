@@ -32,8 +32,11 @@ Neither the current BSP stack nor the double-fault IST stack is modified.
   explicitly build the gated experiment; default kernel boot excludes it.
 - Rust boot CI independently builds and boots the feature profile under
   QEMU `qemu64` and `max`, requiring the STACK smoke marker and READY,
-  with no ERROR marker. The ordinary boot profile and its CR3/RSP observations
-  remain separate.
+  with no ERROR marker. The follow-up read-only QMP snapshot walks the
+  separate feature image's full ELF PT_LOAD mapping inventory and the first
+  and last byte of each static stack page against that image's Limine bases.
+  It checks the observed PTE RW-chain but cannot establish future mappings.
+  The ordinary boot profile and its CR3/RSP observations remain separate.
 - Fault-injection feature combinations with the stack smoke are compile-time
   rejected. CI checks feature Clippy and host tests, and retains serial logs.
 
