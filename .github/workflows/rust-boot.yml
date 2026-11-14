@@ -129,6 +129,16 @@ jobs:
           fi
           grep -Fq "STACK: four aligned BSS pages writable under inherited mappings" "$log"
           grep -Fq "READY: Embers Rust no_std entry reached." "$log"
+      - name: Inspect feature-only transition stack mappings using paused QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Previous step built the feature ISO and its matching ELF.
+          python3 scripts/check_active_pte_qmp.py \
+            --cpu "${{ matrix.cpu_model }}" \
+            --iso build/embers-rust.iso \
+            --elf rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel \
+            --feature-stack
       - name: Preserve serial and exception logs
         if: always()
         uses: actions/upload-artifact@v4

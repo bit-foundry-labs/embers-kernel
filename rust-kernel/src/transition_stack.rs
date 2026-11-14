@@ -62,7 +62,7 @@ static mut TRANSITION_STACK: AlignedStack = AlignedStack([0; STACK_BYTES]);
 /// invalid inherited mapping can produce a fatal page fault in this opt-in
 /// QEMU test. Never call it from the normal boot configuration.
 #[cfg(feature = "transition-stack-smoke")]
-pub unsafe fn probe_inherited_mappings() -> Result<(), StackProbeError> {
+pub unsafe fn probe_inherited_mappings() -> Result<u64, StackProbeError> {
     use core::ptr::{addr_of_mut, read_volatile, write_volatile};
     // SAFETY: This feature-only probe runs exclusively on the BSP, and only
     // forms a raw pointer to private BSS storage. It creates no Rust reference.
@@ -87,7 +87,7 @@ pub unsafe fn probe_inherited_mappings() -> Result<(), StackProbeError> {
             }
         }
     }
-    Ok(())
+    Ok(storage as u64)
 }
 
 #[cfg(test)]

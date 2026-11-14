@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Inspect all kernel ELF PT_LOAD pages via paused QEMU QMP physical reads.
+"""Inspect inherited ELF and opt-in stack mappings via paused QEMU QMP reads.
 
-No kernel code, HHDM pointer or guest page-table write is involved. Only a
-present 4 KiB leaf chains are supported; unsupported formats fail closed.
+The monitor never dereferences guessed guest pointers or modifies page tables.
+Only present 4 KiB leaf chains are supported; unsupported formats fail closed.
 QEMU observation is not a formal hardware proof or DMA isolation evidence.
 """
 
@@ -22,6 +22,9 @@ MAX_PAGES_PER_SEGMENT = 64  # Any larger image needs a reviewed coverage budget.
 PHYSICAL_RAM = 256 * 1024 * 1024
 FRAME_MASK = 0x000F_FFFF_FFFF_F000
 READY = "READY: Embers Rust no_std entry reached."
+STACK_BYTES = 4 * PAGE
+STACK_BASE_LINE = re.compile(r"^STACK: static BSS virtual base = 0x([0-9a-f]{16})$", re.M)
+STACK_SMOKE = "STACK: four aligned BSS pages writable under inherited mappings"
 CR3_LINE = re.compile(r"^PAGING: inherited CR3 raw = 0x([0-9a-f]{16})$", re.M)
 REG_CR3 = re.compile(r"\bCR3\s*=\s*(?:0x)?([0-9a-fA-F]{8,16})\b")
 XP_VALUE = re.compile(r"(?im)^\s*(?:0x)?[0-9a-f]{8,16}:\s*0x([0-9a-f]{1,16})\s*$")
@@ -124,6 +127,52 @@ def inspect_load_segments(loads: list[dict[str, int]],
     return observed
 
 
+def feature_stack_base(serial: str, loads: list[dict[str, int]]) -> int:
+    """Validate feature-only stack address against its own ELF RW segment."""
+    check(len(loads) == 3 and loads[2]["flags"] == 6,
+          "feature-stack ELF must have RX/R/RW load inventory")
+    matches = STACK_BASE_LINE.findall(serial)
+    check(len(matches) == 1 and serial.count(STACK_SMOKE) == 1,
+          "feature-stack log missing or duplicated")
+    base = int(matches[0], 16)
+    check(base != 0 and base % PAGE == 0, "feature stack base is null or unaligned")
+    end = base + STACK_BYTES
+    check(end <= 1 << 64 and canonical_48(base) and canonical_48(end - 1),
+          "feature stack range is noncanonical or overflows")
+    rw = loads[2]
+    check(rw["vaddr"] <= base and end <= rw["vaddr"] + rw["memsz"],
+          "feature stack range is outside feature ELF RW LOAD")
+    return base
+
+
+def inspect_feature_stack(base: int, loads: list[dict[str, int]],
+                          candidates: list[tuple[int, int]],
+                          root: int, read_word) -> set[tuple[bool, bool]]:
+    """Verify first and last byte of each static stack page under old CR3."""
+    check(len(loads) == len(candidates) == 3, "incomplete feature ELF inventory")
+    rw = loads[2]
+    physical_start, physical_end = candidates[2]
+    check(physical_end - physical_start == rw["memsz"],
+          "feature RW candidate span length mismatch")
+    check(rw["vaddr"] <= base and base + STACK_BYTES <= rw["vaddr"] + rw["memsz"],
+          "feature stack outside RW LOAD")
+    rights = set()
+    frames = set()
+    for page in range(4):
+        addresses = (base + page * PAGE, base + (page + 1) * PAGE - 1)
+        for va in addresses:
+            phys, chain = walk_4k_only(root, va, read_word)
+            expected = physical_start + va - rw["vaddr"]
+            check(phys == expected,
+                  f"feature stack VA 0x{va:016x} differs from expected backing")
+            writable = all(bool(entry & 2) for entry in chain)
+            check(writable, "feature stack page lacks writable PTE chain")
+            rights.add((writable, any(bool(entry & (1 << 63)) for entry in chain)))
+            frames.add(phys & ~(PAGE - 1))
+    check(len(frames) == 4, "feature stack pages unexpectedly share frames")
+    return rights
+
+
 class Qmp:
     def __init__(self, location: Path):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -166,7 +215,7 @@ class Qmp:
         self.sock.close()
 
 
-def run(cpu: str, iso: Path, elf: Path) -> None:
+def run(cpu: str, iso: Path, elf: Path, feature_stack: bool = False) -> None:
     check(cpu in ("qemu64", "max"), "unsupported QEMU CPU profile")
     loads = parse_loads(elf.read_bytes())
     with tempfile.TemporaryDirectory(prefix="embers-pte-") as directory:
@@ -195,6 +244,10 @@ def run(cpu: str, iso: Path, elf: Path) -> None:
                 raise ValueError("QEMU did not report READY in 15 seconds")
             observed = serial_cr3(text)
             candidates = derive_candidates(loads, text)
+            stack_base = feature_stack_base(text, loads) if feature_stack else None
+            if not feature_stack:
+                check(STACK_BASE_LINE.search(text) is None,
+                      "default kernel unexpectedly logged feature stack")
             monitor = Qmp(qmp_path)
             monitor.execute("stop")
             state = monitor.execute("query-status")
@@ -222,6 +275,15 @@ def run(cpu: str, iso: Path, elf: Path) -> None:
                 print(f'  LOAD {result["load"]} ELF-flags={result["flags"]} '
                       f'pages={result["pages"]} checked-VA={result["checks"]}; '
                       f'observed PTE bits: {raw_rights}')
+            if stack_base is not None:
+                stack_rights = inspect_feature_stack(
+                    stack_base, loads, candidates, root, read_word)
+                rights = ", ".join(
+                    f"RW-chain={rw},NX-bit-seen={nx}"
+                    for rw, nx in sorted(stack_rights)
+                )
+                print(f"PASS: feature-only stack 4 pages/8 endpoints mapped in {cpu}")
+                print(f"  BSS stack VA=0x{stack_base:016x}; observed PTE bits: {rights}")
             print("  QEMU host observation, NOT verified effective permissions or ownership")
         finally:
             if monitor is not None:
@@ -300,24 +362,74 @@ def self_test() -> None:
     absent[0x4000 + indices[3] * 8 + 16] &= ~1
     rejected(lambda: inspect_load_segments(
         segments, candidates, root, absent.__getitem__), "nonpresent final page")
-    print("PASS: all-ELF-segment QMP PTE coverage and negative fixtures (no live QEMU)")
+    # Feature-only stack: validate the logged virtual extent belongs to this
+    # particular ELF's RW LOAD and inspect eight addresses on four pages.
+    rw_start = va + 4 * PAGE
+    stack_start = rw_start + PAGE
+    feature_loads = [three_page_segment, second,
+                     {"vaddr": rw_start, "memsz": 5 * PAGE, "flags": 6}]
+    feature_candidates = [candidates[0], candidates[1],
+                          (0x0FF48000, 0x0FF4D000)]
+    feature_log = (f"STACK: static BSS virtual base = 0x{stack_start:016x}\n"
+                   + STACK_SMOKE + "\n")
+    assert feature_stack_base(feature_log, feature_loads) == stack_start
+    feature_leaves = dict(leaves)
+    for page in range(4, 9):
+        feature_leaves[0x4000 + indices[3] * 8 + page * 8] = (
+            (0x0FF44000 + page * PAGE) | 0x3
+        )
+    assert inspect_feature_stack(
+        stack_start, feature_loads, feature_candidates, root,
+        feature_leaves.__getitem__) == {(True, False)}
+    rejected(lambda: feature_stack_base("", feature_loads), "missing stack log")
+    rejected(lambda: feature_stack_base(feature_log + feature_log,
+                                        feature_loads), "duplicate stack log")
+    rejected(lambda: feature_stack_base(
+        feature_log.replace(f"0x{stack_start:016x}",
+                            f"0x{stack_start+1:016x}"),
+        feature_loads), "unaligned stack base")
+    rejected(lambda: feature_stack_base(
+        feature_log.replace(f"0x{stack_start:016x}",
+                            f"0x{rw_start:016x}"),
+        [*feature_loads[:2], {"vaddr": rw_start, "memsz": 2 * PAGE,
+                              "flags": 6}]), "stack extends outside ELF")
+    wrong = dict(feature_leaves)
+    wrong[0x4000 + indices[3] * 8 + 6 * 8] = 0x0FF6A003
+    rejected(lambda: inspect_feature_stack(
+        stack_start, feature_loads, feature_candidates, root,
+        wrong.__getitem__), "wrong interior stack page backing")
+    absent_stack = dict(feature_leaves)
+    absent_stack[0x4000 + indices[3] * 8 + 7 * 8] &= ~1
+    rejected(lambda: inspect_feature_stack(
+        stack_start, feature_loads, feature_candidates, root,
+        absent_stack.__getitem__), "unmapped stack page")
+    readonly_stack = dict(feature_leaves)
+    readonly_stack[0x4000 + indices[3] * 8 + 5 * 8] &= ~2
+    rejected(lambda: inspect_feature_stack(
+        stack_start, feature_loads, feature_candidates, root,
+        readonly_stack.__getitem__), "read-only stack PTE")
+
+    print("PASS: ELF and feature-stack QMP PTE rejection fixtures (no live QEMU)")
 
 
 if __name__ == "__main__":
     args = argparse.ArgumentParser(description=__doc__)
     args.add_argument("--self-test", action="store_true")
+    args.add_argument("--feature-stack", action="store_true",
+                      help="inspect separately built transition-stack feature ELF")
     args.add_argument("--cpu", choices=("qemu64", "max"))
     args.add_argument("--iso", type=Path)
     args.add_argument("--elf", type=Path)
     parsed = args.parse_args()
     try:
         if parsed.self_test:
-            check(parsed.cpu is None and parsed.iso is None and parsed.elf is None,
+            check(parsed.cpu is None and parsed.iso is None and parsed.elf is None
+                  and not parsed.feature_stack,
                   "self-test takes no QEMU arguments")
             self_test()
         else:
             check(parsed.cpu and parsed.iso and parsed.elf,
                   "live mode needs --cpu, --iso and --elf")
-            run(parsed.cpu, parsed.iso, parsed.elf)
+            run(parsed.cpu, parsed.iso, parsed.elf, parsed.feature_stack)
     except (OSError, ValueError, KeyError, TimeoutError) as error:
         raise SystemExit(f"FAIL: {error}") from error
