@@ -363,5 +363,4 @@ mod tests {
             Err(ProtectionError::LongModeInactive)
         );
     }
-
 }
