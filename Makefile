@@ -9,6 +9,8 @@ check: rust-check
 rust-check:
 	cd rust-kernel && cargo build --release --offline $(RUST_FEATURES)
 	python3 scripts/check_rust_elf.py $(RUST_KERNEL)
+	python3 scripts/check_elf_loads.py --self-test
+	python3 scripts/check_elf_loads.py $(RUST_KERNEL)
 
 rust-iso: rust-check
 	KERNEL_ELF="$(RUST_KERNEL)" ISO_KERNEL_NAME="embers.elf" BOOT_CONFIG="rust-kernel/limine.conf" ISO_OUT="build/embers-rust.iso" bash scripts/make_iso.sh
