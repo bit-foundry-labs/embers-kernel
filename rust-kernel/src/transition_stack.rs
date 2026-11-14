@@ -64,7 +64,9 @@ static mut TRANSITION_STACK: AlignedStack = AlignedStack([0; STACK_BYTES]);
 #[cfg(feature = "transition-stack-smoke")]
 pub unsafe fn probe_inherited_mappings() -> Result<(), StackProbeError> {
     use core::ptr::{addr_of_mut, read_volatile, write_volatile};
-    let storage = addr_of_mut!(TRANSITION_STACK.0).cast::<u8>();
+    // SAFETY: This feature-only probe runs exclusively on the BSP, and only
+    // forms a raw pointer to private BSS storage. It creates no Rust reference.
+    let storage = unsafe { addr_of_mut!(TRANSITION_STACK.0).cast::<u8>() };
     validate_storage_range(storage as u64, STACK_BYTES)?;
 
     for page in 0..STACK_PAGES {
