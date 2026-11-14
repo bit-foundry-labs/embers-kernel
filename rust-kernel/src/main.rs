@@ -153,6 +153,22 @@ pub extern "C" fn kernel_entry() -> ! {
             halt_forever()
         }
     }
+    // These are numeric observations under Limine's active mappings, not
+    // verified memory translations or evidence that a new stack can survive CR3.
+    let context = paging_mode::sample_active_context();
+    if !context.rsp_is_canonical_48() {
+        serial_write("ERROR: observed BSP RSP not 48-bit canonical\n");
+        halt_forever();
+    }
+    serial_write("PAGING: inherited CR3 raw = ");
+    serial_write_hex(context.raw_cr3);
+    serial_write("\n");
+    serial_write("PAGING: root frame candidate = ");
+    serial_write_hex(context.root_frame_candidate());
+    serial_write("\n");
+    serial_write("PAGING: observed BSP RSP = ");
+    serial_write_hex(context.observed_rsp);
+    serial_write("\n");
     let state = kernel_state::KernelState::new(check_boot_memory());
     run_kernel(state)
 }
