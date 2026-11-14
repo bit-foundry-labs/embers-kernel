@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Read one live x86-64 ELF text translation via paused QEMU QMP memory reads.
+"""Inspect all kernel ELF PT_LOAD pages via paused QEMU QMP physical reads.
 
 No kernel code, HHDM pointer or guest page-table write is involved. Only a
-single present, 4 KiB leaf chain is supported; unsupported formats fail closed.
+present 4 KiB leaf chains are supported; unsupported formats fail closed.
 QEMU observation is not a formal hardware proof or DMA isolation evidence.
 """
 
@@ -18,6 +18,7 @@ from pathlib import Path
 from check_elf_loads import derive_candidates, parse_loads
 
 PAGE = 4096
+MAX_PAGES_PER_SEGMENT = 64  # Any larger image needs a reviewed coverage budget.
 PHYSICAL_RAM = 256 * 1024 * 1024
 FRAME_MASK = 0x000F_FFFF_FFFF_F000
 READY = "READY: Embers Rust no_std entry reached."
@@ -81,6 +82,48 @@ def walk_4k_only(root: int, va: int, read_word) -> tuple[int, list[int]]:
     return table + (va & 0xFFF), entries
 
 
+def segment_probe_points(segment: dict[str, int]) -> list[int]:
+    """Sample each intersected 4 KiB page and the final loaded byte."""
+    start = segment["vaddr"]
+    size = segment["memsz"]
+    check(size > 0, "empty ELF load segment")
+    last = start + size - 1
+    first_page = start & ~(PAGE - 1)
+    last_page = last & ~(PAGE - 1)
+    pages = 1 + (last_page - first_page) // PAGE
+    check(0 < pages <= MAX_PAGES_PER_SEGMENT, "segment exceeds bounded QMP page budget")
+    points = [start]
+    for boundary in range(first_page + PAGE, last_page + 1, PAGE):
+        points.append(boundary)
+    if points[-1] != last:
+        points.append(last)
+    return points
+
+
+def inspect_load_segments(loads: list[dict[str, int]],
+                          candidates: list[tuple[int, int]],
+                          root: int, read_word) -> list[dict]:
+    """Compare every LOAD page and its last byte against Limine candidates."""
+    check(len(loads) == len(candidates) == 3, "incomplete kernel LOAD inventory")
+    observed = []
+    for index, (segment, candidate) in enumerate(zip(loads, candidates)):
+        start, end = candidate
+        check(end - start == segment["memsz"], "candidate span length mismatch")
+        permissions = set()
+        points = segment_probe_points(segment)
+        for va in points:
+            physical, chain = walk_4k_only(root, va, read_word)
+            expected = start + va - segment["vaddr"]
+            check(physical == expected,
+                  f"LOAD {index} VA 0x{va:016x} differs from Limine physical candidate")
+            permissions.add((all(bool(value & 2) for value in chain),
+                             any(bool(value & (1 << 63)) for value in chain)))
+        observed.append({"load": index, "flags": segment["flags"],
+                         "pages": len({va // PAGE for va in points}),
+                         "checks": len(points), "permissions": permissions})
+    return observed
+
+
 class Qmp:
     def __init__(self, location: Path):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -126,8 +169,6 @@ class Qmp:
 def run(cpu: str, iso: Path, elf: Path) -> None:
     check(cpu in ("qemu64", "max"), "unsupported QEMU CPU profile")
     loads = parse_loads(elf.read_bytes())
-    # The first RX LOAD segment starts at the kernel's linked entry page.
-    va = loads[0]["vaddr"]
     with tempfile.TemporaryDirectory(prefix="embers-pte-") as directory:
         location = Path(directory)
         serial = location / "serial.log"
@@ -161,19 +202,27 @@ def run(cpu: str, iso: Path, elf: Path) -> None:
             current = register_cr3(monitor.hmp("info registers"))
             check(current == observed, "CR3 changed between boot serial and paused CPU")
             root = current & FRAME_MASK
-            physical, chain = walk_4k_only(
-                root, va,
-                lambda address: xp_word(monitor.hmp(f"xp /1gx 0x{address:x}")),
-            )
-            expected_start, _ = candidates[0]
-            check(physical == expected_start,
-                  "QEMU PTE physical translation differs from Limine candidate")
-            writable = all(value & 2 != 0 for value in chain)
-            nx_observed = any(value & (1 << 63) != 0 for value in chain)
-            print(f"PASS: paused {cpu} active 4-level PTE path matches RX ELF start")
-            print(f"  VA=0x{va:016x} PHYSICAL=0x{physical:016x}")
-            print(f"  CR3=0x{current:016x}; RW-chain={writable}; NX-bit-seen={nx_observed}")
-            print("  QEMU host observation, NOT verified permissions or ownership")
+            # The guest is paused; repeated ancestor reads are immutable.
+            # Cache physical PTE words to keep the QMP query count bounded.
+            entries = {}
+
+            def read_word(address: int) -> int:
+                if address not in entries:
+                    entries[address] = xp_word(monitor.hmp(f"xp /1gx 0x{address:x}"))
+                return entries[address]
+
+            results = inspect_load_segments(loads, candidates, root, read_word)
+            print(f"PASS: paused {cpu} QEMU PT_LOAD page coverage matches Limine candidates")
+            print(f"  inherited CR3=0x{current:016x}; 4 KiB leaves only")
+            for result in results:
+                raw_rights = ", ".join(
+                    f"RW-chain={rw},NX-bit-seen={nx}"
+                    for rw, nx in sorted(result["permissions"])
+                )
+                print(f'  LOAD {result["load"]} ELF-flags={result["flags"]} '
+                      f'pages={result["pages"]} checked-VA={result["checks"]}; '
+                      f'observed PTE bits: {raw_rights}')
+            print("  QEMU host observation, NOT verified effective permissions or ownership")
         finally:
             if monitor is not None:
                 monitor.close()
@@ -214,7 +263,44 @@ def self_test() -> None:
     rejected(lambda: walk_4k_only(root, va, lambda address: cells[address] | (1 << 7)), "huge")
     rejected(lambda: xp_word("Cannot access memory"), "physical memory read failed")
     rejected(lambda: register_cr3("CR3=000000000ff9c000 CR3=000000000ff9c000"), "duplicate CR3")
-    print("PASS: bounded QMP PTE walker and rejection fixtures (no live QEMU)")
+    # Pure three-page test: cover interior page boundaries and the last byte.
+    three_page_segment = {
+        "vaddr": va, "memsz": 2 * PAGE + 17, "flags": 5,
+    }
+    points = segment_probe_points(three_page_segment)
+    assert points == [va, va + PAGE, va + 2 * PAGE, va + 2 * PAGE + 16]
+    leaves = dict(cells)
+    leaves[0x4000 + indices[3] * 8 + 8] = 0x0FF45003
+    leaves[0x4000 + indices[3] * 8 + 16] = 0x0FF46003
+    # One-segment verification is intentionally rejected: the inventory must
+    # contain the full kernel RX/R/RW set.
+    rejected(lambda: inspect_load_segments(
+        [three_page_segment], [(0x0FF44000, 0x0FF46011)], root,
+        leaves.__getitem__), "partial LOAD inventory")
+    # A complete synthetic inventory exercises all page boundaries and the
+    # last byte, plus mismatch/nonpresent rejection in an interior page.
+    second = {"vaddr": va + 3 * PAGE, "memsz": 30, "flags": 4}
+    third = {"vaddr": va + 4 * PAGE, "memsz": 80, "flags": 6}
+    leaves[0x4000 + indices[3] * 8 + 24] = 0x0FF47003
+    leaves[0x4000 + indices[3] * 8 + 32] = 0x0FF48003
+    segments = [three_page_segment, second, third]
+    candidates = [(0x0FF44000, 0x0FF46011),
+                  (0x0FF47000, 0x0FF4701E),
+                  (0x0FF48000, 0x0FF48050)]
+    results = inspect_load_segments(segments, candidates, root, leaves.__getitem__)
+    assert [row["checks"] for row in results] == [4, 2, 2]
+    rejected(lambda: segment_probe_points({
+        "vaddr": va, "memsz": (MAX_PAGES_PER_SEGMENT + 1) * PAGE,
+    }), "unbounded LOAD scan")
+    mismatched = dict(leaves)
+    mismatched[0x4000 + indices[3] * 8 + 8] = 0x0FF4F003
+    rejected(lambda: inspect_load_segments(
+        segments, candidates, root, mismatched.__getitem__), "wrong interior physical page")
+    absent = dict(leaves)
+    absent[0x4000 + indices[3] * 8 + 16] &= ~1
+    rejected(lambda: inspect_load_segments(
+        segments, candidates, root, absent.__getitem__), "nonpresent final page")
+    print("PASS: all-ELF-segment QMP PTE coverage and negative fixtures (no live QEMU)")
 
 
 if __name__ == "__main__":

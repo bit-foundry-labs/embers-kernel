@@ -94,7 +94,7 @@ jobs:
             echo "Normal boot unexpectedly ran the optional ownership smoke test" >&2
             exit 1
           fi
-      - name: Inspect active ELF text translation using paused QEMU physical reads
+      - name: Inspect all ELF LOAD pages using paused QEMU physical reads
         shell: bash
         run: |
           set -euo pipefail
