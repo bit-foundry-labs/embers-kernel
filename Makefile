@@ -55,6 +55,7 @@ rust-paging-mode-test:
 	mkdir -p build
 	cd rust-kernel && rustc --edition=2021 --test tests/paging_mode_host.rs -o ../build/embers-paging-mode-tests
 	./build/embers-paging-mode-tests
+	python3 scripts/check_paging_snapshot.py --self-test
 
 # One-shot BSP initial-pool issuance tests; no hardware ownership proof.
 .PHONY: rust-boot-pool-gate-test

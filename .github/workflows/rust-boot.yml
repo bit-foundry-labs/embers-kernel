@@ -82,6 +82,7 @@ jobs:
           grep -Fq "READY: Embers Rust no_std entry reached." "build/embers-rust-serial-${{ matrix.profile_name }}.log"
           grep -Fq "ADDRESS: Limine HHDM and executable bases validated" "build/embers-rust-serial-${{ matrix.profile_name }}.log"
           grep -Fq "PAGING: active four-level mode validated" "build/embers-rust-serial-${{ matrix.profile_name }}.log"
+          python3 scripts/check_paging_snapshot.py "build/embers-rust-serial-${{ matrix.profile_name }}.log"
           if grep -Fq "OWNERSHIP:" "build/embers-rust-serial-${{ matrix.profile_name }}.log"; then
             echo "Normal boot unexpectedly ran the optional ownership smoke test" >&2
             exit 1
