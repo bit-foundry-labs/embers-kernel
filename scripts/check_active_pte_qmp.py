@@ -23,7 +23,7 @@ FRAME_MASK = 0x000F_FFFF_FFFF_F000
 READY = "READY: Embers Rust no_std entry reached."
 CR3_LINE = re.compile(r"^PAGING: inherited CR3 raw = 0x([0-9a-f]{16})$", re.M)
 REG_CR3 = re.compile(r"\bCR3\s*=\s*(?:0x)?([0-9a-fA-F]{8,16})\b")
-XP_VALUE = re.compile(r"(?im)^\s*0x[0-9a-f]+:\s*0x([0-9a-f]{1,16})\s*$")
+XP_VALUE = re.compile(r"(?im)^\s*(?:0x)?[0-9a-f]{8,16}:\s*0x([0-9a-f]{1,16})\s*$")
 
 
 def check(condition: bool, message: str) -> None:
@@ -197,6 +197,7 @@ def self_test() -> None:
     }
     assert walk_4k_only(root, va, lambda address: cells[address])[0] == 0x0FF44000
     assert xp_word("0x000000000ff9c800: 0x000000000ff44003\r\n") == 0x0FF44003
+    assert xp_word("000000000ffacff8: 0x000000000ffab027\r\n") == 0x0FFAB027
     assert register_cr3("CR0=80000011 CR2=0000 CR3=000000000ff9c000") == 0x0FF9C000
     assert serial_cr3("PAGING: inherited CR3 raw = 0x000000000ff9c000\n" + READY) == 0x0FF9C000
 
