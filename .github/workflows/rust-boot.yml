@@ -8,6 +8,7 @@ on:
       - "scripts/make_iso.sh"
       - "scripts/check_rust_elf.py"
       - "scripts/check_elf_loads.py"
+      - "scripts/check_active_pte_qmp.py"
       - "Makefile"
       - ".github/workflows/rust-boot.yml"
   # Required checks must run even for documentation-only pull requests.
@@ -46,6 +47,8 @@ jobs:
         run: make rust-paging-mode-test
       - name: Test dedicated transition-stack range checks on host
         run: make rust-transition-stack-test
+      - name: Test read-only QMP 4 KiB walker negative paths on host
+        run: make rust-active-pte-test
       - name: Install emulator and ISO tools
         shell: bash
         run: |
@@ -91,6 +94,14 @@ jobs:
             echo "Normal boot unexpectedly ran the optional ownership smoke test" >&2
             exit 1
           fi
+      - name: Inspect active ELF text translation using paused QEMU physical reads
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_active_pte_qmp.py \
+            --cpu "${{ matrix.cpu_model }}" \
+            --iso build/embers-rust.iso \
+            --elf rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel
       - name: Feature-gated transition stack BSS probe in QEMU
         shell: bash
         run: |
