@@ -52,7 +52,7 @@ def register_cr3(text: str) -> int:
 
 def xp_word(text: str) -> int:
     hits = XP_VALUE.findall(text)
-    check(len(hits) == 1, "expected one readable physical 64-bit word")
+    check(len(hits) == 1, f"expected one readable physical 64-bit word; QEMU said {text[:240]!r}")
     return int(hits[0], 16)
 
 
