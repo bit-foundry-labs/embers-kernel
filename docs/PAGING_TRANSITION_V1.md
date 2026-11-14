@@ -2,7 +2,7 @@
 
 **Status:** Design specification only; no paging implementation or hardware-enforced process isolation exists on `main`.
 **Scope:** x86-64, one bootstrap CPU, headless QEMU, Rust `no_std`, Limine base revision 6.
-**Reviewed source baseline:** `f12d9d87d2aa5262435b59522f7d70cc8a187681` (PR #41), especially [`main.rs`](../rust-kernel/src/main.rs), [`arch.rs`](../rust-kernel/src/arch.rs), [`boot_memory.rs`](../rust-kernel/src/boot_memory.rs), and [`memory.rs`](../rust-kernel/src/memory.rs).
+**Original reference baseline:** `f12d9d87d2aa5262435b59522f7d70cc8a187681` (PR #41). **Updated boot-bookkeeping checkpoint:** `ab2d36d` on `main` (PRs #59 and #60). The checkpoint is not evidence of a page-table transition. See [`main.rs`](../rust-kernel/src/main.rs), [`kernel_state.rs`](../rust-kernel/src/kernel_state.rs), [`boot_memory.rs`](../rust-kernel/src/boot_memory.rs), and [`memory.rs`](../rust-kernel/src/memory.rs).
 
 ## Purpose and explicit non-goals
 
@@ -13,9 +13,9 @@ Not in scope: ring-3 execution, syscalls, IPC, process isolation, SMP, TLB shoot
 ## Known baseline and gaps
 
 - Limine currently supplies long mode, the initial `CR3` mappings, the executing stack, and response structures. The kernel installs GDT/TSS/IDT, including a kernel-owned 16 KiB double-fault IST stack. The entry stack is still bootloader-provided.
-- `boot_memory::initial_frame_pool` bounds and copies memory-map *values* from trusted Limine pointers, then `memory::FramePool` monotonically hands out physical **numbers** from one selected span. It neither maps nor clears frames, and is not yet a persistent allocator.
+- `boot_memory::initial_frame_pool` consumes a one-shot production permit before parsing Limine map values; safe Rust cannot reconstruct another production `FramePool` through the exposed constructor. `kernel_entry` moves the transactional allocator and registry into `KernelState`, then into `run_kernel`, which checks the first reservation and halts. This is a single-image software issuance boundary, **not** an authenticated runtime allocator, frame clearing or mapping, a protection mechanism against unsafe/privileged code, or global hardware ownership.
 - `frame_ledger::FrameLedger` is only used in an optional boot ownership smoke test; it does not enforce exclusive physical-frame access. Its identity is not globally unique across independently overlapping frame pools.
-- There is currently no kernel request or implementation that safely exposes the Limine higher-half direct-map (HHDM) offset or executable's physical base to a new table builder. **Do not assume an identity mapping, fixed HHDM offset, or `physical == virtual`.** Limine base revision 6 inherits the base revision 3+ mapping restrictions.
+- Boot metadata preflight now reads and validates Limine HHDM and executable-base responses and calculates candidate addresses. It does not prove that arbitrary physical frames are mapped or writable. **Do not assume identity mapping, a fixed HHDM offset, or `physical == virtual`.**
 - Current exception stubs are fatal and nonreturning. They must not be repurposed as resumable page-fault recovery or ring-3 trap entry.
 
 ## Mapping survival contract
@@ -62,7 +62,7 @@ Use explicit feature gates so deliberate failure runs cannot be confused with no
 
 ## Suggested bounded implementation sequence
 
-1. **M06a, preparatory:** Acquire trusted physical-to-virtual mapping provenance, reserve and zero table frames, and test bookkeeping failures without changing `CR3`.
+1. **M06a, preparatory:** Build on the existing metadata preflight and one-shot software frame issuer; add verified access, reservation and zeroing of real table frames, and test failure behavior without changing `CR3`.
 2. **M06b, transition smoke:** Add a verified transition stack and a minimal new supervisor-only mapping set; switch `CR3` once in a gated QEMU run and check post-switch diagnostics.
 3. **M06c, permissions:** Tighten page permissions and add explicit expected-fault probes. Review fault-stack mappings and safe TLB semantics.
 4. **Later, isolation:** Only after these pass, design separate address spaces, an authenticated user-mode trap/syscall ABI and IPC. No step here establishes ring-3 safety.
@@ -73,7 +73,7 @@ Use explicit feature gates so deliberate failure runs cannot be confused with no
 - Should the first transition deliberately support only four-level, 4 KiB paging; how do we reject unsupported CPU modes?
 - Which kernel image segments and data currently share physical pages, preventing clean W^X separation?
 - How will we place, align, map and prove the lifetime of a dedicated transition stack?
-- What is the smallest frame-reservation mechanism that can prevent double allocation while remaining `no_std`, single-core and dependency-free?
+- How can the current one-shot safe-Rust pool issuer and boot reservation ledger become verified, persistent authority for actual page-table frames, including alias detection and use lifetimes?
 
 ## References
 

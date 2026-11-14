@@ -31,8 +31,10 @@ jobs:
           make rust-provenance-test
           make rust-boot-pool-gate-test
           make rust-frame-registry-test
-          rustc --edition=2021 --test rust-kernel/research/page_entry.rs -o /tmp/embers-page-entry-tests
-          /tmp/embers-page-entry-tests
+          (cd rust-kernel && rustfmt --edition 2021 --check research/page_entry.rs research/page_walk.rs tests/page_research_integration.rs)
+          (cd rust-kernel && clippy-driver --edition=2021 --test research/page_entry.rs -D warnings -o /tmp/embers-entry-clippy)
+          (cd rust-kernel && clippy-driver --edition=2021 --test research/page_walk.rs -D warnings -o /tmp/embers-walk-clippy)
+          make rust-paging-research-test
       - name: Install QEMU and ISO prerequisites
         shell: bash
         run: |

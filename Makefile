@@ -69,3 +69,13 @@ rust-frame-registry-test:
 	mkdir -p build
 	cd rust-kernel && rustc --edition=2021 --test tests/frame_registry_host.rs -o ../build/embers-frame-registry-tests
 	./build/embers-frame-registry-tests
+# Host-only page-entry and page-walk research; no hardware mappings.
+.PHONY: rust-paging-research-test
+rust-paging-research-test:
+	mkdir -p build
+	cd rust-kernel && rustc --edition=2021 --test research/page_entry.rs -o ../build/embers-page-entry-tests
+	./build/embers-page-entry-tests
+	cd rust-kernel && rustc --edition=2021 --test research/page_walk.rs -o ../build/embers-page-walk-tests
+	./build/embers-page-walk-tests
+	cd rust-kernel && rustc --edition=2021 --test tests/page_research_integration.rs -o ../build/embers-page-integration-tests
+	./build/embers-page-integration-tests
