@@ -166,11 +166,18 @@ mod tests {
     #[test]
     fn stack_canonicality_rejects_both_48_bit_holes() {
         for rsp in [0, 0x0000_7fff_ffff_ffff, 0xffff_8000_0000_0000] {
-            assert!(BootPagingSnapshot { raw_cr3: 0, observed_rsp: rsp }.rsp_is_canonical_48());
+            assert!(BootPagingSnapshot {
+                raw_cr3: 0,
+                observed_rsp: rsp
+            }
+            .rsp_is_canonical_48());
         }
         for rsp in [0x0000_8000_0000_0000, 0xffff_0000_0000_0000] {
-            assert!(!BootPagingSnapshot { raw_cr3: 0, observed_rsp: rsp }.rsp_is_canonical_48());
+            assert!(!BootPagingSnapshot {
+                raw_cr3: 0,
+                observed_rsp: rsp
+            }
+            .rsp_is_canonical_48());
         }
     }
-
 }
