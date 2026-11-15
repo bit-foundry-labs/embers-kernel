@@ -31,8 +31,11 @@ existing nonreturning #PF exception handler.
 ## Evidence requirements
 
 The M03 exception workflow builds each feature as a **separate ELF and ISO**.
-For each it boots QEMU `-cpu max` with Limine's inherited page tables,
-then invokes `scripts/check_permission_fault.py` to require:
+For each feature-specific ELF and ISO, CI boots **both** `-cpu max` and
+`-cpu qemu64` as separate disposable guests using Limine's inherited tables.
+The original M03 test job name and `max` serial log filenames are preserved;
+additional `qemu64` logs use a `.qemu64` suffix. Each profile must pass the
+CPU protection preflight marker and `scripts/check_permission_fault.py`:
 
 1. Exactly one target-address diagnostic, with an aligned 48-bit canonical
    address completely within that test image's **R** or **RW** ELF segment.
@@ -42,6 +45,10 @@ then invokes `scripts/check_permission_fault.py` to require:
    error code is **exactly** `0x3` or `0x11`. A generic `#PF` line does
    **not** pass.
 4. No `READY`, no `ERROR`, and no alternative exception report.
+
+A success in one CPU profile never substitutes for a missing or failed
+result in the other. Every permission run uses the corresponding feature ELF
+for target membership checks, without relying on addresses from another build.
 
 The host-side parser also exercises negative cases for mismatched error
 codes, wrong CR2/RIP, missing reports, duplicate reports, wrong ELF segments

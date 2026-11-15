@@ -94,40 +94,57 @@ jobs:
                 ro-write | nx-exec) expected="FAULT: #PF page fault" ;;
               esac
             fi
-            echo "--- $mode: Boot x86-64 QEMU ---"
-            set +e
-            timeout --signal=TERM --kill-after=2s 10s \
-              qemu-system-x86_64 -cpu max -m 256M \
-                -cdrom build/embers-rust.iso -display none \
-                -serial "file:build/exception-logs/$mode.serial.log" \
-                -d int,guest_errors -D "build/exception-logs/$mode.qemu.log" \
-                -monitor none -no-reboot -no-shutdown
-            status=$?
-            set -e
-            echo "QEMU exit: $status"
-            cat "build/exception-logs/$mode.serial.log" || true
-            if [[ "$status" -ne 124 && "$status" -ne 0 ]]; then
-              echo "QEMU returned unexpected status" >&2
-              exit 1
+
+            # Preserve the existing required M03 job and legacy max logs.
+            # Only permission tests repeat in qemu64; same feature ISO.
+            cpu_models=(max)
+            if [[ "$mode" == "ro-write" || "$mode" == "nx-exec" ]]; then
+              cpu_models=(max qemu64)
             fi
-            grep -Fq "$expected" "build/exception-logs/$mode.serial.log"
-            if grep -Fq "ERROR:" "build/exception-logs/$mode.serial.log"; then
-              echo "Kernel emitted ERROR during $mode" >&2
-              exit 1
-            fi
-            if [[ "$mode" != "normal" ]]; then
-              if grep -Fq "READY: Embers" "build/exception-logs/$mode.serial.log"; then
-                echo "Fault scenario accidentally reached normal READY" >&2
+            for cpu_model in "${cpu_models[@]}"; do
+              suffix=""
+              if [[ "$cpu_model" != "max" ]]; then
+                suffix=".$cpu_model"
+              fi
+              serial_log="build/exception-logs/$mode$suffix.serial.log"
+              trace_log="build/exception-logs/$mode$suffix.qemu.log"
+              echo "--- $mode: Boot x86-64 QEMU cpu=$cpu_model ---"
+              set +e
+              timeout --signal=TERM --kill-after=2s 10s \
+                qemu-system-x86_64 -cpu "$cpu_model" -m 256M \
+                  -cdrom build/embers-rust.iso -display none \
+                  -serial "file:$serial_log" \
+                  -d int,guest_errors -D "$trace_log" \
+                  -monitor none -no-reboot -no-shutdown
+              status=$?
+              set -e
+              echo "QEMU cpu=$cpu_model exit: $status"
+              cat "$serial_log" || true
+              if [[ "$status" -ne 124 && "$status" -ne 0 ]]; then
+                echo "QEMU $cpu_model returned unexpected status in $mode" >&2
                 exit 1
               fi
-              grep -Eq 'RIP=0x[[:xdigit:]]{16}' "build/exception-logs/$mode.serial.log"
-              if [[ "$mode" == "ro-write" || "$mode" == "nx-exec" ]]; then
-                python3 scripts/check_permission_fault.py \
-                  --mode "$mode" \
-                  --elf rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel \
-                  "build/exception-logs/$mode.serial.log"
+              grep -Fq "$expected" "$serial_log"
+              if grep -Fq "ERROR:" "$serial_log"; then
+                echo "Kernel emitted ERROR during $mode on $cpu_model" >&2
+                exit 1
               fi
-            fi
+              if [[ "$mode" != "normal" ]]; then
+                if grep -Fq "READY: Embers" "$serial_log"; then
+                  echo "Fault scenario reached READY on $cpu_model" >&2
+                  exit 1
+                fi
+                grep -Eq 'RIP=0x[[:xdigit:]]{16}' "$serial_log"
+                if [[ "$mode" == "ro-write" || "$mode" == "nx-exec" ]]; then
+                  grep -Fq "PAGING: CPU protection controls active (CR0.WP, EFER.NXE, EFER.LMA)" "$serial_log"
+                  python3 scripts/check_permission_fault.py \
+                    --mode "$mode" \
+                    --elf rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel \
+                    "$serial_log"
+                  echo "PASS: $cpu_model effective permission rejection in $mode"
+                fi
+              fi
+            done
           done
       - name: Upload complete fault and exception evidence
         if: always()
