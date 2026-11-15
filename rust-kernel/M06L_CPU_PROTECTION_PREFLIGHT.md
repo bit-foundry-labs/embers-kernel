@@ -19,7 +19,7 @@ questions:
 | CPUID extended max leaf | Require `0x80000008` before using extended width fields |
 | CPUID `0x80000001`.EDX[20] | NX capability must be advertised |
 | CPUID `0x80000008`.EAX[7:0] | MAXPHYADDR must be in the bounded 32–52-bit range |
-| CPUID `0x80000008`.EAX[15:8] | Advertised linear width must be 48–57 bits |
+| CPUID `0x80000008`.EAX[15:8] | Advertised linear width must be exactly 48 or 57 bits; unsupported encodings are rejected |
 | CR0[16] | WP must be enabled for supervisor write protection |
 | EFER MSR `0xC0000080`[11] | NXE must be enabled |
 | EFER[10] | Long mode must be active (LMA) |

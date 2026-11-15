@@ -160,7 +160,7 @@ pub fn validate_protection(
     }
     // A 4-level walk uses 48-bit canonical addresses even when the CPU
     // advertises support for a wider 5-level mode (disabled elsewhere).
-    if !(48..=57).contains(&linear_address_bits) {
+    if linear_address_bits != 48 && linear_address_bits != 57 {
         return Err(ProtectionError::InvalidLinearAddressWidth);
     }
     if feature_edx & CPUID_NX == 0 {
@@ -334,10 +334,18 @@ mod tests {
                 Err(ProtectionError::InvalidPhysicalAddressWidth)
             );
         }
-        assert_eq!(
-            validate_protection(0x8000_0008, base.0, 0x282f, base.2, base.3),
-            Err(ProtectionError::InvalidLinearAddressWidth)
-        );
+        for width in [0x2f, 49, 56, 58] {
+            assert_eq!(
+                validate_protection(
+                    0x8000_0008,
+                    base.0,
+                    (width << 8) | 40,
+                    base.2,
+                    base.3,
+                ),
+                Err(ProtectionError::InvalidLinearAddressWidth)
+            );
+        }
         assert!(!root_candidate_fits_width(0x1000, 31));
         assert!(!root_candidate_fits_width(0x1000, 53));
     }
