@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from check_elf_loads import derive_candidates, parse_loads
+from check_paging_snapshot import check as validate_paging_snapshot
 
 PAGE = 4096
 MAX_PAGES_PER_SEGMENT = 64  # Any larger image needs a reviewed coverage budget.
@@ -60,14 +61,19 @@ def xp_word(text: str) -> int:
     return int(hits[0], 16)
 
 
-def walk_4k_only(root: int, va: int, read_word) -> tuple[int, list[int]]:
-    """Walk one 48-bit VA; reject absent or huge-page/unsupported entries.
+def walk_4k_only(root: int, va: int, read_word,
+                 physical_bits: int) -> tuple[int, list[int]]:
+    """Walk one 48-bit VA; reject out-of-width physical fields at each level.
 
-    read_word(phys_addr) is injectable, so negative cases need no QEMU.
-    We do not claim hardware physical-width, reserved-bit or NXE validation.
+    Width comes from the checked CPU preflight. This is selected-field
+    validation, not complete reserved-bit, PCID or permission validation.
+    read_word(physical_addr) is injectable for negative-path tests.
     """
     check(canonical_48(va), "noncanonical target VA")
+    check(32 <= physical_bits <= 52, "invalid reported MAXPHYADDR")
     check(root != 0 and root % PAGE == 0, "invalid CR3 root frame")
+    check((root & FRAME_MASK) >> physical_bits == 0,
+          "reserved physical-address bits in CR3 root")
     table = root
     entries = []
     for shift in (39, 30, 21, 12):
@@ -77,12 +83,57 @@ def walk_4k_only(root: int, va: int, read_word) -> tuple[int, list[int]]:
         value = read_word(location)
         check(0 <= value < (1 << 64), "invalid PTE width")
         check(value & 1 != 0, "nonpresent page-table entry")
+        frame_field = value & FRAME_MASK
+        check(frame_field >> physical_bits == 0,
+              "reserved physical-address bits in present page-table entry")
         if shift > 12:
             check(value & (1 << 7) == 0, "unsupported large-page entry")
         entries.append(value)
-        table = value & FRAME_MASK
+        table = frame_field
         check(table < PHYSICAL_RAM, "next frame outside observed QEMU RAM")
     return table + (va & 0xFFF), entries
+
+
+def test_mutated_captured_entries(root: int, va: int, read_word,
+                                  physical_bits: int) -> int:
+    """Inject invalid bits into Python copies of paused QEMU entries only.
+
+    All guest physical-memory reads remain read-only. Each injected entry
+    must fail the same MAXPHYADDR check used by the positive live walk.
+    """
+    check(32 <= physical_bits <= 52, "invalid mutation-test physical width")
+    if physical_bits == 52:
+        return 0  # No physical address-field bit above MAXPHYADDR remains.
+    locations = []
+
+    def record_read(location: int) -> int:
+        locations.append(location)
+        return read_word(location)
+
+    walk_4k_only(root, va, record_read, physical_bits)
+    check(len(locations) == 4, "expected four captured PTE locations")
+    reserved = 1 << physical_bits
+    for modified_location in locations:
+        def modified_read(location: int) -> int:
+            raw = read_word(location)
+            return raw | reserved if location == modified_location else raw
+
+        try:
+            walk_4k_only(root, va, modified_read, physical_bits)
+        except ValueError as error:
+            check(str(error) == "reserved physical-address bits in present page-table entry",
+                  "injected PTE rejected for the wrong reason")
+        else:
+            raise ValueError("injected PTE was unexpectedly accepted")
+
+    try:
+        walk_4k_only(root | reserved, va, read_word, physical_bits)
+    except ValueError as error:
+        check(str(error) == "reserved physical-address bits in CR3 root",
+              "injected CR3 candidate rejected for the wrong reason")
+    else:
+        raise ValueError("injected CR3 root was unexpectedly accepted")
+    return len(locations)
 
 
 def segment_probe_points(segment: dict[str, int]) -> list[int]:
@@ -105,7 +156,7 @@ def segment_probe_points(segment: dict[str, int]) -> list[int]:
 
 def inspect_load_segments(loads: list[dict[str, int]],
                           candidates: list[tuple[int, int]],
-                          root: int, read_word) -> list[dict]:
+                          root: int, read_word, physical_bits: int) -> list[dict]:
     """Compare every LOAD page and its last byte against Limine candidates."""
     check(len(loads) == len(candidates) == 3, "incomplete kernel LOAD inventory")
     observed = []
@@ -115,7 +166,7 @@ def inspect_load_segments(loads: list[dict[str, int]],
         permissions = set()
         points = segment_probe_points(segment)
         for va in points:
-            physical, chain = walk_4k_only(root, va, read_word)
+            physical, chain = walk_4k_only(root, va, read_word, physical_bits)
             expected = start + va - segment["vaddr"]
             check(physical == expected,
                   f"LOAD {index} VA 0x{va:016x} differs from Limine physical candidate")
@@ -147,7 +198,8 @@ def feature_stack_base(serial: str, loads: list[dict[str, int]]) -> int:
 
 def inspect_feature_stack(base: int, loads: list[dict[str, int]],
                           candidates: list[tuple[int, int]],
-                          root: int, read_word) -> set[tuple[bool, bool]]:
+                          root: int, read_word,
+                          physical_bits: int) -> set[tuple[bool, bool]]:
     """Verify first and last byte of each static stack page under old CR3."""
     check(len(loads) == len(candidates) == 3, "incomplete feature ELF inventory")
     rw = loads[2]
@@ -161,7 +213,7 @@ def inspect_feature_stack(base: int, loads: list[dict[str, int]],
     for page in range(4):
         addresses = (base + page * PAGE, base + (page + 1) * PAGE - 1)
         for va in addresses:
-            phys, chain = walk_4k_only(root, va, read_word)
+            phys, chain = walk_4k_only(root, va, read_word, physical_bits)
             expected = physical_start + va - rw["vaddr"]
             check(phys == expected,
                   f"feature stack VA 0x{va:016x} differs from expected backing")
@@ -243,6 +295,7 @@ def run(cpu: str, iso: Path, elf: Path, feature_stack: bool = False) -> None:
             else:
                 raise ValueError("QEMU did not report READY in 15 seconds")
             observed = serial_cr3(text)
+            physical_bits = validate_paging_snapshot(text)
             candidates = derive_candidates(loads, text)
             stack_base = feature_stack_base(text, loads) if feature_stack else None
             if not feature_stack:
@@ -264,8 +317,11 @@ def run(cpu: str, iso: Path, elf: Path, feature_stack: bool = False) -> None:
                     entries[address] = xp_word(monitor.hmp(f"xp /1gx 0x{address:x}"))
                 return entries[address]
 
-            results = inspect_load_segments(loads, candidates, root, read_word)
+            results = inspect_load_segments(loads, candidates, root, read_word, physical_bits)
+            mutation_checks = test_mutated_captured_entries(
+                root, loads[0]["vaddr"], read_word, physical_bits)
             print(f"PASS: paused {cpu} QEMU PT_LOAD page coverage matches Limine candidates")
+            print(f"  MAXPHYADDR={physical_bits}; {mutation_checks} observed PTE mutations rejected (host-only)")
             print(f"  inherited CR3=0x{current:016x}; 4 KiB leaves only")
             for result in results:
                 raw_rights = ", ".join(
@@ -277,7 +333,7 @@ def run(cpu: str, iso: Path, elf: Path, feature_stack: bool = False) -> None:
                       f'observed PTE bits: {raw_rights}')
             if stack_base is not None:
                 stack_rights = inspect_feature_stack(
-                    stack_base, loads, candidates, root, read_word)
+                    stack_base, loads, candidates, root, read_word, physical_bits)
                 rights = ", ".join(
                     f"RW-chain={rw},NX-bit-seen={nx}"
                     for rw, nx in sorted(stack_rights)
@@ -306,7 +362,7 @@ def self_test() -> None:
         0x3000 + indices[2] * 8: 0x4003,
         0x4000 + indices[3] * 8: 0x0FF44003,
     }
-    assert walk_4k_only(root, va, lambda address: cells[address])[0] == 0x0FF44000
+    assert walk_4k_only(root, va, lambda address: cells[address], 40)[0] == 0x0FF44000
     assert xp_word("0x000000000ff9c800: 0x000000000ff44003\r\n") == 0x0FF44003
     assert xp_word("000000000ffacff8: 0x000000000ffab027\r\n") == 0x0FFAB027
     assert register_cr3("CR0=80000011 CR2=0000 CR3=000000000ff9c000") == 0x0FF9C000
@@ -319,10 +375,10 @@ def self_test() -> None:
             return
         raise AssertionError("invalid input was accepted: " + reason)
 
-    rejected(lambda: walk_4k_only(root, 0x0000800000000000, cells.__getitem__), "canonicality")
-    rejected(lambda: walk_4k_only(0, va, cells.__getitem__), "zero root")
-    rejected(lambda: walk_4k_only(root, va, lambda address: cells[address] & ~1), "nonpresent")
-    rejected(lambda: walk_4k_only(root, va, lambda address: cells[address] | (1 << 7)), "huge")
+    rejected(lambda: walk_4k_only(root, 0x0000800000000000, cells.__getitem__, 40), "canonicality")
+    rejected(lambda: walk_4k_only(0, va, cells.__getitem__, 40), "zero root")
+    rejected(lambda: walk_4k_only(root, va, lambda address: cells[address] & ~1, 40), "nonpresent")
+    rejected(lambda: walk_4k_only(root, va, lambda address: cells[address] | (1 << 7), 40), "huge")
     rejected(lambda: xp_word("Cannot access memory"), "physical memory read failed")
     rejected(lambda: register_cr3("CR3=000000000ff9c000 CR3=000000000ff9c000"), "duplicate CR3")
     # Pure three-page test: cover interior page boundaries and the last byte.
@@ -338,7 +394,7 @@ def self_test() -> None:
     # contain the full kernel RX/R/RW set.
     rejected(lambda: inspect_load_segments(
         [three_page_segment], [(0x0FF44000, 0x0FF46011)], root,
-        leaves.__getitem__), "partial LOAD inventory")
+        leaves.__getitem__, 40), "partial LOAD inventory")
     # A complete synthetic inventory exercises all page boundaries and the
     # last byte, plus mismatch/nonpresent rejection in an interior page.
     second = {"vaddr": va + 3 * PAGE, "memsz": 30, "flags": 4}
@@ -349,7 +405,7 @@ def self_test() -> None:
     candidates = [(0x0FF44000, 0x0FF46011),
                   (0x0FF47000, 0x0FF4701E),
                   (0x0FF48000, 0x0FF48050)]
-    results = inspect_load_segments(segments, candidates, root, leaves.__getitem__)
+    results = inspect_load_segments(segments, candidates, root, leaves.__getitem__, 40)
     assert [row["checks"] for row in results] == [4, 2, 2]
     rejected(lambda: segment_probe_points({
         "vaddr": va, "memsz": (MAX_PAGES_PER_SEGMENT + 1) * PAGE,
@@ -357,11 +413,11 @@ def self_test() -> None:
     mismatched = dict(leaves)
     mismatched[0x4000 + indices[3] * 8 + 8] = 0x0FF4F003
     rejected(lambda: inspect_load_segments(
-        segments, candidates, root, mismatched.__getitem__), "wrong interior physical page")
+        segments, candidates, root, mismatched.__getitem__, 40), "wrong interior physical page")
     absent = dict(leaves)
     absent[0x4000 + indices[3] * 8 + 16] &= ~1
     rejected(lambda: inspect_load_segments(
-        segments, candidates, root, absent.__getitem__), "nonpresent final page")
+        segments, candidates, root, absent.__getitem__, 40), "nonpresent final page")
     # Feature-only stack: validate the logged virtual extent belongs to this
     # particular ELF's RW LOAD and inspect eight addresses on four pages.
     rw_start = va + 4 * PAGE
@@ -380,7 +436,7 @@ def self_test() -> None:
         )
     assert inspect_feature_stack(
         stack_start, feature_loads, feature_candidates, root,
-        feature_leaves.__getitem__) == {(True, False)}
+        feature_leaves.__getitem__, 40) == {(True, False)}
     rejected(lambda: feature_stack_base("", feature_loads), "missing stack log")
     rejected(lambda: feature_stack_base(feature_log + feature_log,
                                         feature_loads), "duplicate stack log")
@@ -397,19 +453,34 @@ def self_test() -> None:
     wrong[0x4000 + indices[3] * 8 + 6 * 8] = 0x0FF6A003
     rejected(lambda: inspect_feature_stack(
         stack_start, feature_loads, feature_candidates, root,
-        wrong.__getitem__), "wrong interior stack page backing")
+        wrong.__getitem__, 40), "wrong interior stack page backing")
     absent_stack = dict(feature_leaves)
     absent_stack[0x4000 + indices[3] * 8 + 7 * 8] &= ~1
     rejected(lambda: inspect_feature_stack(
         stack_start, feature_loads, feature_candidates, root,
-        absent_stack.__getitem__), "unmapped stack page")
+        absent_stack.__getitem__, 40), "unmapped stack page")
     readonly_stack = dict(feature_leaves)
     readonly_stack[0x4000 + indices[3] * 8 + 5 * 8] &= ~2
     rejected(lambda: inspect_feature_stack(
         stack_start, feature_loads, feature_candidates, root,
-        readonly_stack.__getitem__), "read-only stack PTE")
+        readonly_stack.__getitem__, 40), "read-only stack PTE")
 
-    print("PASS: ELF and feature-stack QMP PTE rejection fixtures (no live QEMU)")
+    # Out-of-width address bits must fail at every level *before* masking.
+    assert test_mutated_captured_entries(root, va, cells.__getitem__, 40) == 4
+    for width in [0, 31, 53, 64]:
+        rejected(lambda width=width: walk_4k_only(
+            root, va, cells.__getitem__, width), "invalid physical width")
+    for location in cells:
+        corrupt = dict(cells)
+        corrupt[location] |= 1 << 40
+        rejected(lambda corrupt=corrupt: walk_4k_only(
+            root, va, corrupt.__getitem__, 40), "reserved physical bit")
+    rejected(lambda: walk_4k_only(
+        root | (1 << 40), va, cells.__getitem__, 40), "reserved CR3 address bit")
+    # At MAXPHYADDR 52 there is no out-of-width bit within PTE bits 51:12.
+    assert test_mutated_captured_entries(root, va, cells.__getitem__, 52) == 0
+
+    print("PASS: ELF, MAXPHYADDR, and feature-stack QMP rejection fixtures (no live QEMU)")
 
 
 if __name__ == "__main__":

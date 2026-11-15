@@ -16,7 +16,8 @@ READY = "READY: Embers Rust no_std entry reached."
 PROTECTION_MARKER = "PAGING: CPU protection controls active (CR0.WP, EFER.NXE, EFER.LMA)"
 
 
-def check(serial: str) -> None:
+def check(serial: str) -> int:
+    """Validate BSP paging observations and return the reported MAXPHYADDR."""
     lines = [line.strip() for line in serial.splitlines()]
     values = {}
     positions = []
@@ -44,13 +45,14 @@ def check(serial: str) -> None:
     linear_width = values["maximum linear bits"]
     if not (32 <= physical_width <= 52):
         raise ValueError("invalid CPU-reported MAXPHYADDR width")
-    if not (48 <= linear_width <= 57):
+    if linear_width not in (48, 57):
         raise ValueError("invalid CPU-reported maximum linear width")
     if root == 0 or root % 4096 or root >> physical_width:
         raise ValueError("root candidate exceeds the reported physical width")
     upper, sign = rsp >> 48, (rsp >> 47) & 1
     if rsp == 0 or upper != (0xFFFF if sign else 0):
         raise ValueError("BSP RSP is zero or noncanonical for four-level paging")
+    return physical_width
 
 
 def self_test() -> None:
@@ -63,7 +65,7 @@ def self_test() -> None:
         PROTECTION_MARKER,
         READY,
     ))
-    check(good)
+    assert check(good) == 40
     for bad in (
         good.replace("0x0000000012345000", "0x0000000012346000"),
         good.replace("0xffff800000102000", "0x0000800000102000"),
@@ -73,6 +75,8 @@ def self_test() -> None:
                      "MAXPHYADDR bits = 0x000000000000001f"),
         good.replace("maximum linear bits = 0x0000000000000030",
                      "maximum linear bits = 0x000000000000002f"),
+        good.replace("maximum linear bits = 0x0000000000000030",
+                     "maximum linear bits = 0x0000000000000031"),
         good.replace(PROTECTION_MARKER, ""),
         good + "\n" + PROTECTION_MARKER,
         good.replace("0x0000000012345123", "0x0000010012345123")
