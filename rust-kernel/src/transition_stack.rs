@@ -13,7 +13,9 @@ pub enum StackProbeError {
     AddressOverflow,
     NonCanonical,
     ReadbackMismatch,
+    #[cfg(any(feature = "transition-stack-switch", test))]
     CallbackOutsideStack,
+    #[cfg(any(feature = "transition-stack-switch", test))]
     OriginalStackNotRestored,
 }
 
@@ -47,13 +49,19 @@ pub fn validate_storage_range(base: u64, bytes: usize) -> Result<(), StackProbeE
     Ok(())
 }
 
-#[cfg(any(feature = "transition-stack-smoke", feature = "transition-stack-switch"))]
+#[cfg(any(
+    feature = "transition-stack-smoke",
+    feature = "transition-stack-switch"
+))]
 #[repr(align(4096))]
 struct AlignedStack([u8; STACK_BYTES]);
 
 // Kernel-image BSS, not an allocation from the boot frame registry.
 // The switch feature uses this same static only in disposable QEMU.
-#[cfg(any(feature = "transition-stack-smoke", feature = "transition-stack-switch"))]
+#[cfg(any(
+    feature = "transition-stack-smoke",
+    feature = "transition-stack-switch"
+))]
 static mut TRANSITION_STACK: AlignedStack = AlignedStack([0; STACK_BYTES]);
 
 /// Probe the first and last byte of each 4 KiB page, restoring original bytes.
@@ -63,7 +71,10 @@ static mut TRANSITION_STACK: AlignedStack = AlignedStack([0; STACK_BYTES]);
 /// BSS mappings active. No other code may access this private static. An
 /// invalid inherited mapping can produce a fatal page fault in this opt-in
 /// QEMU test. Never call it from the normal boot configuration.
-#[cfg(any(feature = "transition-stack-smoke", feature = "transition-stack-switch"))]
+#[cfg(any(
+    feature = "transition-stack-smoke",
+    feature = "transition-stack-switch"
+))]
 pub unsafe fn probe_inherited_mappings() -> Result<u64, StackProbeError> {
     use core::ptr::{addr_of_mut, read_volatile, write_volatile};
     // SAFETY: This feature-only probe runs exclusively on the BSP, and only
@@ -91,7 +102,6 @@ pub unsafe fn probe_inherited_mappings() -> Result<u64, StackProbeError> {
     }
     Ok(storage as u64)
 }
-
 
 #[cfg(feature = "transition-stack-switch")]
 core::arch::global_asm!(
@@ -131,6 +141,7 @@ extern "C" fn witness_callback_rsp() -> u64 {
 }
 
 /// Pure numeric outcome checking; does not certify backing or ownership.
+#[cfg(any(feature = "transition-stack-switch", test))]
 pub fn validate_stack_switch_sample(
     base: u64,
     bytes: usize,
@@ -233,7 +244,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn accepts_callback_inside_last_page_and_preserved_bootstrap_rsp() {
         let base = 0xffff_ffff_8000_0000;
@@ -254,8 +264,13 @@ mod tests {
     fn rejects_callback_outside_dedicated_stack_or_unaligned() {
         let base = 0xffff_ffff_8000_0000;
         let old = 0xffff_8000_0001_0000;
-        for rsp in [base, base + STACK_BYTES as u64, base + 7,
-                    base + STACK_BYTES as u64 - 7, 0x0000_8000_0000_0000] {
+        for rsp in [
+            base,
+            base + STACK_BYTES as u64,
+            base + 7,
+            base + STACK_BYTES as u64 - 7,
+            0x0000_8000_0000_0000,
+        ] {
             assert_eq!(
                 validate_stack_switch_sample(base, STACK_BYTES, rsp, old, old),
                 Err(StackProbeError::CallbackOutsideStack)
