@@ -8,6 +8,7 @@ on:
       - "linker.ld"
       - "scripts/make_iso.sh"
       - "scripts/check_rust_elf.py"
+      - "scripts/check_permission_fault.py"
       - ".github/workflows/rust-exceptions.yml"
   # Required checks must run even for documentation-only pull requests.
   pull_request:
@@ -26,7 +27,7 @@ jobs:
         run: |
           cargo fmt --all -- --check
           cargo clippy --release --offline -- -D warnings
-          for mode in ud pf df; do
+          for mode in ud pf df ro-write nx-exec; do
             cargo clippy --release --offline --features "fault-$mode" -- -D warnings
           done
       - name: Reject conflicting QEMU fault-injection features
@@ -48,6 +49,24 @@ jobs:
             fi
             echo "PASS: conflicting fault modes rejected: $features"
           done
+          for features in "fault-ro-write,fault-nx-exec" "fault-ro-write,fault-pf" "fault-nx-exec,fault-df"; do
+            log="../build/exception-logs/conflicting-${features//,/-}.log"
+            if cargo check --release --offline --features "$features" >"$log" 2>&1; then
+              echo "Unexpected success for conflicting $features" >&2
+              exit 1
+            fi
+            grep -Fq "QEMU permission fault tests are mutually exclusive with other fault modes." "$log"
+          done
+          for features in "transition-stack-smoke,fault-ro-write" "transition-stack-smoke,fault-nx-exec"; do
+            log="../build/exception-logs/conflicting-${features//,/-}.log"
+            if cargo check --release --offline --features "$features" >"$log" 2>&1; then
+              echo "Unexpected success for stack and fault mode $features" >&2
+              exit 1
+            fi
+            grep -Fq "transition-stack-smoke cannot be combined with fault injection modes." "$log"
+          done
+      - name: Validate permission-fault diagnostic parser on host
+        run: python3 scripts/check_permission_fault.py --self-test
       - name: Install headless QEMU and ISO prerequisites
         shell: bash
         run: |
@@ -62,7 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/exception-logs
-          for mode in normal ud pf df; do
+          for mode in normal ud pf df ro-write nx-exec; do
             if [[ "$mode" == "normal" ]]; then
               make rust-iso
               expected="READY: Embers Rust no_std entry reached."
@@ -72,6 +91,7 @@ jobs:
                 ud) expected="FAULT: #UD invalid opcode" ;;
                 pf) expected="FAULT: #PF page fault" ;;
                 df) expected="FAULT: #DF double fault" ;;
+                ro-write | nx-exec) expected="FAULT: #PF page fault" ;;
               esac
             fi
             echo "--- $mode: Boot x86-64 QEMU ---"
@@ -101,6 +121,12 @@ jobs:
                 exit 1
               fi
               grep -Eq 'RIP=0x[[:xdigit:]]{16}' "build/exception-logs/$mode.serial.log"
+              if [[ "$mode" == "ro-write" || "$mode" == "nx-exec" ]]; then
+                python3 scripts/check_permission_fault.py \
+                  --mode "$mode" \
+                  --elf rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel \
+                  "build/exception-logs/$mode.serial.log"
+              fi
             fi
           done
       - name: Upload complete fault and exception evidence
