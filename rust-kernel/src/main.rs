@@ -162,11 +162,35 @@ pub extern "C" fn kernel_entry() -> ! {
             halt_forever()
         }
     }
+    let protection = match paging_mode::sample_protection_state() {
+        Ok(protection) => protection,
+        Err(reason) => {
+            serial_write("ERROR: CPU paging protection preflight: ");
+            serial_write(match reason {
+                paging_mode::ProtectionError::MissingExtendedCpuid => "required CPUID leaf missing",
+                paging_mode::ProtectionError::InvalidPhysicalAddressWidth => "invalid MAXPHYADDR",
+                paging_mode::ProtectionError::InvalidLinearAddressWidth => "invalid linear width",
+                paging_mode::ProtectionError::NxUnsupported => "NX unsupported",
+                paging_mode::ProtectionError::WriteProtectDisabled => "CR0.WP disabled",
+                paging_mode::ProtectionError::NxDisabled => "EFER.NXE disabled",
+                paging_mode::ProtectionError::LongModeInactive => "EFER.LMA inactive",
+            });
+            serial_write("\n");
+            halt_forever();
+        }
+    };
     // These are numeric observations under Limine's active mappings, not
     // verified memory translations or evidence that a new stack can survive CR3.
     let context = paging_mode::sample_active_context();
     if !context.rsp_is_canonical_48() {
         serial_write("ERROR: observed BSP RSP not 48-bit canonical\n");
+        halt_forever();
+    }
+    if !paging_mode::root_candidate_fits_width(
+        context.root_frame_candidate(),
+        protection.physical_address_bits,
+    ) {
+        serial_write("ERROR: CR3 root candidate violates MAXPHYADDR\n");
         halt_forever();
     }
     serial_write("PAGING: inherited CR3 raw = ");
@@ -178,6 +202,13 @@ pub extern "C" fn kernel_entry() -> ! {
     serial_write("PAGING: observed BSP RSP = ");
     serial_write_hex(context.observed_rsp);
     serial_write("\n");
+    serial_write("PAGING: MAXPHYADDR bits = ");
+    serial_write_hex(protection.physical_address_bits as u64);
+    serial_write("\n");
+    serial_write("PAGING: maximum linear bits = ");
+    serial_write_hex(protection.linear_address_bits as u64);
+    serial_write("\n");
+    serial_write("PAGING: CPU protection controls active (CR0.WP, EFER.NXE, EFER.LMA)\n");
     let state = kernel_state::KernelState::new(check_boot_memory());
     run_kernel(state)
 }
