@@ -78,6 +78,11 @@ def validate(serial: str, mode: str, loads=None) -> tuple[int, int]:
         require(rip == target, "NX instruction fetch RIP must equal target")
     else:
         require(rip != target, "write-fault RIP unexpectedly equals data target")
+        if loads is not None:
+            executable = loads[0]
+            require(executable["flags"] == 5 and
+                    executable["vaddr"] <= rip < executable["vaddr"] + executable["memsz"],
+                    "write-fault RIP outside executable ELF LOAD")
     return target, code
 
 
@@ -96,6 +101,18 @@ def self_test() -> None:
             {"vaddr": target - 4096, "memsz": 8192, "flags": 6},
         ]
         assert validate(good, mode, sample_loads) == (target, code)
+        if mode == "ro-write":
+            # Valid canonical RIP, code and CR2; instruction pointer in R, not RX.
+            non_executable_rip = target - 4096
+            forged = good.replace(
+                f"RIP=0x{rip:016x}", f"RIP=0x{non_executable_rip:016x}"
+            )
+            try:
+                validate(forged, mode, sample_loads)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("write-fault RIP outside RX LOAD was accepted")
         index = 1 if mode == "ro-write" else 2
         wrong_loads = [dict(item) for item in sample_loads]
         wrong_loads[index]["vaddr"] = target + 4096
