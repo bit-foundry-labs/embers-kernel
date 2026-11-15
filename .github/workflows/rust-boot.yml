@@ -58,8 +58,20 @@ jobs:
           timeout 90s sudo apt-get install -y -o Acquire::Retries=0 -o Acquire::http::Timeout=12 -o Acquire::https::Timeout=12 qemu-system-x86 xorriso
           command -v qemu-system-x86_64
           command -v xorriso
+      - name: Reject stale unverified Limine worktree inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/make_iso.sh
+          mkdir -p limine-binary
+          printf 'do not trust local Limine files\n' > limine-binary/unverified-marker
       - name: Build and inspect ELF then ISO
-        run: make rust-iso
+        run: |
+          make rust-iso
+          # A stale local directory was not removed or compiled from.
+          test -f limine-binary/unverified-marker
+          test -d build/limine-verified-source/limine-binary
+          test -f "build/limine-binary-v12.9.6.tar.gz"
       - name: Boot QEMU and verify Rust READY
         shell: bash
         run: |
