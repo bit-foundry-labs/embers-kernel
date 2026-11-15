@@ -40,9 +40,13 @@ pub fn validate_storage_range(base: u64, bytes: usize) -> Result<(), StackProbeE
     if base & ((PAGE_BYTES as u64) - 1) != 0 {
         return Err(StackProbeError::Unaligned);
     }
-    let last = base
-        .checked_add((bytes - 1) as u64)
+    // The assembly consumes the exclusive top as an actual RSP value.
+    // A representable last byte does not imply a representable top:
+    // [0xffff_ffff_ffff_c000, 2^64) must fail closed.
+    let top = base
+        .checked_add(bytes as u64)
         .ok_or(StackProbeError::AddressOverflow)?;
+    let last = top - 1;
     if !is_canonical_48(base) || !is_canonical_48(last) {
         return Err(StackProbeError::NonCanonical);
     }
@@ -298,6 +302,22 @@ mod tests {
     fn rejects_address_overflow() {
         assert_eq!(
             validate_storage_range(0xffff_ffff_ffff_f000, STACK_BYTES),
+            Err(StackProbeError::AddressOverflow)
+        );
+        // The final byte would fit, but the exclusive stack top
+        // required by MOV RSP is 2^64 and therefore unrepresentable.
+        assert_eq!(
+            validate_storage_range(0xffff_ffff_ffff_c000, STACK_BYTES),
+            Err(StackProbeError::AddressOverflow)
+        );
+        assert_eq!(
+            validate_stack_switch_sample(
+                0xffff_ffff_ffff_c000,
+                STACK_BYTES,
+                0xffff_ffff_ffff_fff8,
+                0xffff_8000_0001_0000,
+                0xffff_8000_0001_0000
+            ),
             Err(StackProbeError::AddressOverflow)
         );
     }
