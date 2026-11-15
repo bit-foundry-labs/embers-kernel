@@ -6,7 +6,7 @@ We're investigating what the kernel should control when applications and AI agen
 
 **This is a research effort, not a working general-purpose operating system or a benchmark-proven AI-optimized kernel.**
 
-[Contribute](CONTRIBUTING.md) · [Research roadmap](docs/CONTRIBUTOR_ROADMAP.md) · [Open issues](https://github.com/bit-foundry-labs/embers-kernel/issues) · [Contributor launch milestone](https://github.com/bit-foundry-labs/embers-kernel/issues/24)
+[Validation Lab](https://embers-kernel-validation-lab.brittneyleighb.chatgpt.site) · [Contribute](CONTRIBUTING.md) · [Research roadmap](docs/CONTRIBUTOR_ROADMAP.md) · [Open issues](https://github.com/bit-foundry-labs/embers-kernel/issues) · [Contributor launch milestone](https://github.com/bit-foundry-labs/embers-kernel/issues/24)
 
 ## Validation Lab
 
