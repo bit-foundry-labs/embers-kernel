@@ -10,3 +10,11 @@
 - Decisions about code ownership or licensing changes should be transparent and discussed before any policy is changed.
 
 This lightweight governance document should evolve as the actual maintainer/contributor community grows.
+
+## Community roles and appointment
+
+The current project steward is **Bit Foundry Labs**. Community reviewer and additional maintainer roles are **future appointments**, not memberships automatically conveyed by opening an issue, making a PR, receiving a compliment, or performing a single review.
+
+The [community roles guide](CONTRIBUTOR_ROLES.md) defines each role's responsibilities, how to express interest, evidence of sustained competence, nomination and appointment steps, scope and duration of authority, recusal, and orderly removal. Maintainers decide appointments transparently in the repository where feasible, with candidate consent. Public technical feedback remains welcome without a role designation.
+
+**Access must follow responsibility:** A recognized community reviewer receives no automatic collaborator, Write, Admin, secret, deployment, or branch-rule bypass permissions. Any future maintainer access is a separate, explicitly approved repository administration action, ordinarily limited to the least GitHub role needed. It does not grant authority over Bit Foundry Labs accounts or services. Use the [main-branch protection guide](BRANCH_PROTECTION.md) for review and CI gates; publishing these docs does not activate GitHub settings.
