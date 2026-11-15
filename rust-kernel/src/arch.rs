@@ -242,7 +242,9 @@ pub fn sample_descriptor_evidence() -> Option<DescriptorEvidence> {
     let gdt_bytes = size_of::<[u64; 5]>() as u64;
     let idt_bytes = size_of::<[IdtGate; 256]>() as u64;
     let tss_bytes = size_of::<TaskStateSegment>() as u64;
-    let ist1_base = addr_of!(DOUBLE_FAULT_STACK.0) as u64;
+    // SAFETY: The single BSP owns this static during this feature-only snapshot;
+    // addr_of! creates a raw address without dereferencing the stack.
+    let ist1_base = unsafe { addr_of!(DOUBLE_FAULT_STACK.0) as u64 };
     let expected_top = ist1_base.checked_add(DOUBLE_FAULT_STACK_BYTES as u64)?;
     if gdt_base != addr_of!(GDT) as u64
         || idt_base != addr_of!(IDT) as u64
