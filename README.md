@@ -91,6 +91,14 @@ For deeper research, see the [capability threat-model task](https://github.com/b
 
 Read [the contribution guide](CONTRIBUTING.md), [research roadmap](docs/CONTRIBUTOR_ROADMAP.md), [review standard](docs/CODE_REVIEW_STANDARD.md), and [Code of Conduct](CODE_OF_CONDUCT.md). Comment on an issue before undertaking substantial work.
 
+## Reviewers and future maintainers
+
+Want to help strengthen Embers without writing kernel code? **Independent technical reviews are welcome**, especially for paging, unsafe Rust, capability protocols, and reproducible QEMU tests. Public review comments do not require repository write access.
+
+We are building a pathway from **contributor → community reviewer → trusted maintainer**. Reviewer recognition is based on evidence-linked technical feedback, not automatic GitHub permissions; future maintainers will be appointed separately when the community and operational needs justify it.
+
+Read the [community roles and selection process](docs/CONTRIBUTOR_ROLES.md), then [register interest in reviewing](https://github.com/bit-foundry-labs/embers-kernel/issues/new?template=role_interest.md). You can also start by reviewing [M06 integration issue #84](https://github.com/bit-foundry-labs/embers-kernel/issues/84). No open role currently promises repository access, employment, or compensation.
+
 ## License and stewardship
 
 An experimental open-source project stewarded by [Bit Foundry Labs](https://github.com/bit-foundry-labs), licensed under [Apache-2.0](LICENSE). See [governance](docs/GOVERNANCE.md) and [security policy](SECURITY.md). Contributions are welcome; participation does not imply funding, employment, or publication credit.

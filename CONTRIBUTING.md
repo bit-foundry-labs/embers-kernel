@@ -19,6 +19,14 @@ The default branch contains experimental Rust `no_std` x86-64 boot, GDT/TSS/IDT 
 
 If changing APIs, provide the invariant being enforced, the trust boundary, failure behavior and how it is tested.
 
+## Grow into a reviewer or maintainer
+
+You do not need to be a code author to contribute. Start by reviewing an open PR: identify an invariant, reproduce a test, inspect a failure path, or explain which hardware assumptions remain unverified.
+
+Our [community role guide](docs/CONTRIBUTOR_ROLES.md) explains the distinction between public contributors, recognized reviewers, and future maintainers; the evidence we look for; how nominations work; and why review recognition does not grant GitHub write access. To express interest, [open a community-role issue](https://github.com/bit-foundry-labs/embers-kernel/issues/new?template=role_interest.md) and link previous contributions. You may also simply comment on a PR.
+
+Maintainer appointments are **not open grants**. They require sustained technical contributions, an explicit invitation and agreement, appropriate security safeguards, and a recorded governance decision. We are not currently appointing outside maintainers by default.
+
 ## Practical workflow
 
 1. Start with an [open issue](https://github.com/bit-foundry-labs/embers-kernel/issues), ideally one with a reproducible expected result. Fork the repository, create a feature branch, and reference the issue.
