@@ -27,7 +27,9 @@ STACK_BYTES = 4 * PAGE
 STACK_BASE_LINE = re.compile(r"^STACK: static BSS virtual base = 0x([0-9a-f]{16})$", re.M)
 STACK_SMOKE = "STACK: four aligned BSS pages writable under inherited mappings"
 CR3_LINE = re.compile(r"^PAGING: inherited CR3 raw = 0x([0-9a-f]{16})$", re.M)
+BSP_RSP_LINE = re.compile(r"^PAGING: observed BSP RSP = 0x([0-9a-f]{16})$", re.M)
 REG_CR3 = re.compile(r"\bCR3\s*=\s*(?:0x)?([0-9a-fA-F]{8,16})\b")
+REG_RSP = re.compile(r"\bRSP\s*=\s*(?:0x)?([0-9a-fA-F]{8,16})\b")
 XP_VALUE = re.compile(r"(?im)^\s*(?:0x)?[0-9a-f]{8,16}:\s*0x([0-9a-f]{1,16})\s*$")
 
 
@@ -53,6 +55,48 @@ def register_cr3(text: str) -> int:
     hits = REG_CR3.findall(text)
     check(len(hits) == 1, "expected one live CPU CR3 register")
     return int(hits[0], 16)
+
+
+
+def serial_bsp_rsp(text: str) -> int:
+    hits = BSP_RSP_LINE.findall(text)
+    check(len(hits) == 1, "expected exactly one early BSP RSP snapshot")
+    return int(hits[0], 16)
+
+
+def register_rsp(text: str) -> int:
+    hits = REG_RSP.findall(text)
+    check(len(hits) == 1, "expected exactly one paused live CPU RSP")
+    return int(hits[0], 16)
+
+
+def inspect_bsp_stack_samples(early_rsp: int, live_rsp: int,
+                              root: int, read_word,
+                              physical_bits: int) -> dict[str, int]:
+    """Inspect eight bytes *below* each RSP; never infer a whole stack range.
+
+    RSP is a point-in-time numeric observation. The tested eight-byte span
+    does not establish the stack allocation boundaries or its reclamation
+    lifetime, nor does a writable PTE chain authenticate frame ownership.
+    """
+    observed = {}
+    for name, rsp in (("early", early_rsp), ("paused", live_rsp)):
+        check(isinstance(rsp, int) and 8 <= rsp < (1 << 64)
+              and rsp % 8 == 0 and canonical_48(rsp),
+              f"{name} RSP is invalid, noncanonical or misaligned")
+        check(canonical_48(rsp - 8), f"{name} RSP underflowed into canonical hole")
+        frames = set()
+        for va in (rsp - 8, rsp - 1):
+            phys, chain = walk_4k_only(root, va, read_word, physical_bits)
+            check(phys < PHYSICAL_RAM,
+                  f"{name} RSP translation exceeds observed QEMU RAM")
+            check(all(bool(entry & 2) for entry in chain),
+                  f"{name} RSP has a read-only PTE chain")
+            frames.add(phys & ~(PAGE - 1))
+        # The eight-byte window cannot span two 4 KiB pages for aligned RSP.
+        check(len(frames) == 1, f"{name} RSP window has unexpected frame alias")
+        observed[name] = next(iter(frames))
+    return observed
 
 
 def xp_word(text: str) -> int:
@@ -295,6 +339,7 @@ def run(cpu: str, iso: Path, elf: Path, feature_stack: bool = False) -> None:
             else:
                 raise ValueError("QEMU did not report READY in 15 seconds")
             observed = serial_cr3(text)
+            early_rsp = serial_bsp_rsp(text) if not feature_stack else None
             physical_bits = validate_paging_snapshot(text)
             candidates = derive_candidates(loads, text)
             stack_base = feature_stack_base(text, loads) if feature_stack else None
@@ -305,7 +350,9 @@ def run(cpu: str, iso: Path, elf: Path, feature_stack: bool = False) -> None:
             monitor.execute("stop")
             state = monitor.execute("query-status")
             check(state.get("running") is False, "QEMU not paused")
-            current = register_cr3(monitor.hmp("info registers"))
+            registers = monitor.hmp("info registers")
+            current = register_cr3(registers)
+            live_rsp = register_rsp(registers) if not feature_stack else None
             check(current == observed, "CR3 changed between boot serial and paused CPU")
             root = current & FRAME_MASK
             # The guest is paused; repeated ancestor reads are immutable.
@@ -331,6 +378,13 @@ def run(cpu: str, iso: Path, elf: Path, feature_stack: bool = False) -> None:
                 print(f'  LOAD {result["load"]} ELF-flags={result["flags"]} '
                       f'pages={result["pages"]} checked-VA={result["checks"]}; '
                       f'observed PTE bits: {raw_rights}')
+            if early_rsp is not None and live_rsp is not None:
+                stack_observed = inspect_bsp_stack_samples(
+                    early_rsp, live_rsp, root, read_word, physical_bits)
+                print(f"PASS: {cpu} sampled early/paused BSP stack locations mapped writable")
+                for label, frame in stack_observed.items():
+                    print(f"  {label} RSP-8..RSP-1 physical frame=0x{frame:016x}")
+                print("  Point samples ONLY: no stack extent, provenance, or lifetime proof")
             if stack_base is not None:
                 stack_rights = inspect_feature_stack(
                     stack_base, loads, candidates, root, read_word, physical_bits)
@@ -465,6 +519,51 @@ def self_test() -> None:
         stack_start, feature_loads, feature_candidates, root,
         readonly_stack.__getitem__, 40), "read-only stack PTE")
 
+
+    # Snapshot checks report only two isolated RSP-adjacent 8-byte windows.
+    assert serial_bsp_rsp(
+        "PAGING: observed BSP RSP = 0xffffffff80000010\n") == va + 16
+    assert register_rsp("RAX=00000000 RSP=ffffffff80001010 CR3=00001000") == va + PAGE + 16
+    early_rsp = va + 16
+    paused_rsp = va + PAGE + 16
+    sample_cells = dict(cells)
+    sample_cells[0x4000 + indices[3] * 8 + 8] = 0x0FF45003
+    snapshot = inspect_bsp_stack_samples(
+        early_rsp, paused_rsp, root, sample_cells.__getitem__, 40)
+    assert snapshot == {"early": 0x0FF44000, "paused": 0x0FF45000}
+    rejected(lambda: serial_bsp_rsp(""), "missing early RSP")
+    rejected(lambda: serial_bsp_rsp(
+        "PAGING: observed BSP RSP = 0xffffffff80000010\n" * 2),
+        "duplicate early RSP")
+    rejected(lambda: register_rsp("RSP=ffffffff80001010 RSP=ffffffff80001010"),
+             "duplicate live RSP")
+    rejected(lambda: register_rsp(""), "missing live RSP")
+    for bad in (0, 7, va + 1, 0x0000800000000000, 0xffff000000000000):
+        rejected(lambda bad=bad: inspect_bsp_stack_samples(
+            bad, paused_rsp, root, sample_cells.__getitem__, 40), "bad early RSP")
+    absent_stack = dict(sample_cells)
+    absent_stack[0x4000 + indices[3] * 8 + 8] &= ~1
+    rejected(lambda: inspect_bsp_stack_samples(
+        early_rsp, paused_rsp, root, absent_stack.__getitem__, 40),
+        "missing paused stack PTE")
+    readonly_stack_sample = dict(sample_cells)
+    readonly_stack_sample[0x4000 + indices[3] * 8 + 8] &= ~2
+    rejected(lambda: inspect_bsp_stack_samples(
+        early_rsp, paused_rsp, root, readonly_stack_sample.__getitem__, 40),
+        "paused stack read-only")
+    wrong_leaf = dict(sample_cells)
+    wrong_leaf[0x4000 + indices[3] * 8 + 8] = (PHYSICAL_RAM - PAGE) | 3
+    # The leaf frame itself may be inside RAM, so this numeric check cannot
+    # prove bootloader ownership or absence of aliases to a different frame.
+    assert inspect_bsp_stack_samples(
+        early_rsp, paused_rsp, root, wrong_leaf.__getitem__, 40)["paused"] == (
+            PHYSICAL_RAM - PAGE)
+    large_page = dict(sample_cells)
+    large_page[0x3000 + indices[2] * 8] |= 1 << 7
+    rejected(lambda: inspect_bsp_stack_samples(
+        early_rsp, paused_rsp, root, large_page.__getitem__, 40),
+        "unsupported large page on stack path")
+
     # Out-of-width address bits must fail at every level *before* masking.
     assert test_mutated_captured_entries(root, va, cells.__getitem__, 40) == 4
     for width in [0, 31, 53, 64]:
@@ -480,7 +579,7 @@ def self_test() -> None:
     # At MAXPHYADDR 52 there is no out-of-width bit within PTE bits 51:12.
     assert test_mutated_captured_entries(root, va, cells.__getitem__, 52) == 0
 
-    print("PASS: ELF, MAXPHYADDR, and feature-stack QMP rejection fixtures (no live QEMU)")
+    print("PASS: ELF, MAXPHYADDR, feature-stack, and BSP RSP QMP rejection fixtures (no live QEMU)")
 
 
 if __name__ == "__main__":
