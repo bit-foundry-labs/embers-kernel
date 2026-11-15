@@ -3,7 +3,6 @@
 #![no_main]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-
 #[cfg(all(
     feature = "descriptor-evidence",
     any(
@@ -258,7 +257,6 @@ fn run_kernel(state: kernel_state::KernelState<16>) -> ! {
         halt_forever();
     }
     serial_write("MEMORY: boot reservation retained after initialization\n");
-
 
     #[cfg(feature = "descriptor-evidence")]
     {
