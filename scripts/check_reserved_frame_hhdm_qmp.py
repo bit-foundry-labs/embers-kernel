@@ -75,6 +75,7 @@ def walk_hhdm(root: int, va: int, read_word,
     check(root != 0 and root % PAGE == 0 and (root & FRAME_MASK) >> physical_bits == 0,
           "invalid inherited CR3 root candidate")
     table = root
+    user_accessible = True
     for shift in (39, 30, 21, 12):
         index = (va >> shift) & 511
         address = table + index * 8
@@ -83,7 +84,9 @@ def walk_hhdm(root: int, va: int, read_word,
         check(0 <= raw < (1 << 64), "invalid 64-bit PTE value")
         check(raw & PRESENT != 0, "nonpresent HHDM PTE")
         check(raw & WRITABLE != 0, "read-only ancestor or HHDM leaf")
-        check(raw & USER == 0, "user-accessible HHDM path")
+        # Effective user access requires U/S=1 at every traversed level.
+        # A user-set ancestor alone does NOT make a supervisor leaf user-accessible.
+        user_accessible = user_accessible and bool(raw & USER)
         field = raw & FRAME_MASK
         check(field >> physical_bits == 0, "PTE exceeds MAXPHYADDR")
         huge = raw & HUGE != 0
@@ -97,10 +100,12 @@ def walk_hhdm(root: int, va: int, read_word,
             base = field & ~(size - 1)
             physical = base + (va & (size - 1))
             check(physical < PHYSICAL_RAM, "HHDM leaf outside configured RAM")
+            check(not user_accessible, "HHDM mapped user-accessible at every level")
             return physical, size
         if shift == 12:
             physical = field + (va & (PAGE - 1))
             check(physical < PHYSICAL_RAM, "HHDM leaf outside configured RAM")
+            check(not user_accessible, "HHDM mapped user-accessible at every level")
             return physical, PAGE
         check(not huge, "unsupported huge-table structure")
         table = field
@@ -211,6 +216,12 @@ def self_test() -> None:
     assert inspect_reservations(samples, root, cells.__getitem__, 40) == [
         (frame, PAGE), (frame + PAGE, PAGE)
     ]
+    # A user-set leaf with a supervisor-only ancestor is still restricted.
+    mixed = dict(cells)
+    mixed[pt] |= USER
+    assert inspect_reservations(samples, root, mixed.__getitem__, 40) == [
+        (frame, PAGE), (frame + PAGE, PAGE)
+    ]
     two_meg = dict(cells)
     two_meg[pd] = 0x83  # 2 MiB superpage, base zero
     assert inspect_reservations(samples, root, two_meg.__getitem__, 40) == [
@@ -254,7 +265,8 @@ def self_test() -> None:
     for bad_cells, label in [
         ({**cells, pt: cells[pt] & ~1}, "nonpresent leaf"),
         ({**cells, pd: cells[pd] & ~2}, "read-only ancestor"),
-        ({**cells, pt: cells[pt] | 4}, "user-accessible leaf"),
+        ({**{key: value | USER for key, value in cells.items()}},
+         "fully user-accessible path"),
         ({**cells, pml4: cells[pml4] | 0x80}, "large PML4"),
         ({**cells, pd: 0x83 | (1 << 13)}, "2 MiB reserved field"),
         ({**cells, pdpt: 0x83 | (1 << 20)}, "1 GiB reserved field"),
