@@ -158,7 +158,7 @@ pub fn validate_stack_switch_sample(
     let top = base + bytes as u64;
     if callback_rsp < top - PAGE_BYTES as u64
         || callback_rsp >= top
-        || callback_rsp % 8 != 0
+        || !callback_rsp.is_multiple_of(8)
         || !is_canonical_48(callback_rsp)
     {
         return Err(StackProbeError::CallbackOutsideStack);
