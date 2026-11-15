@@ -9,6 +9,8 @@ check: rust-check
 rust-check:
 	cd rust-kernel && cargo build --release --offline $(RUST_FEATURES)
 	python3 scripts/check_rust_elf.py $(RUST_KERNEL)
+	python3 scripts/check_elf_loads.py --self-test
+	python3 scripts/check_elf_loads.py $(RUST_KERNEL)
 
 rust-iso: rust-check
 	KERNEL_ELF="$(RUST_KERNEL)" ISO_KERNEL_NAME="embers.elf" BOOT_CONFIG="rust-kernel/limine.conf" ISO_OUT="build/embers-rust.iso" bash scripts/make_iso.sh
@@ -55,6 +57,7 @@ rust-paging-mode-test:
 	mkdir -p build
 	cd rust-kernel && rustc --edition=2021 --test tests/paging_mode_host.rs -o ../build/embers-paging-mode-tests
 	./build/embers-paging-mode-tests
+	python3 scripts/check_paging_snapshot.py --self-test
 
 # Host-only fail-closed transition ordering model; no privileged CR3 write.
 .PHONY: rust-transition-gate-test
@@ -76,7 +79,6 @@ rust-frame-registry-test:
 	mkdir -p build
 	cd rust-kernel && rustc --edition=2021 --test tests/frame_registry_host.rs -o ../build/embers-frame-registry-tests
 	./build/embers-frame-registry-tests
-
 # Host-only page-entry and page-walk research; no hardware mappings.
 .PHONY: rust-paging-research-test
 rust-paging-research-test:
@@ -87,3 +89,20 @@ rust-paging-research-test:
 	./build/embers-page-walk-tests
 	cd rust-kernel && rustc --edition=2021 --test tests/page_research_integration.rs -o ../build/embers-page-integration-tests
 	./build/embers-page-integration-tests
+
+# Host-only numeric checks for future dedicated 16 KiB transition-stack storage.
+.PHONY: rust-transition-stack-test
+rust-transition-stack-test:
+	mkdir -p build
+	rustc --edition=2021 --test rust-kernel/src/transition_stack.rs -o build/embers-transition-stack-tests
+	./build/embers-transition-stack-tests
+# QMP host-only all-LOAD segment coverage/rejection tests (no guest memory access).
+.PHONY: rust-active-pte-test
+rust-active-pte-test:
+	python3 scripts/check_active_pte_qmp.py --self-test
+# Pure MAXPHYADDR/PTE-field refusal tests; no CPU register access or page writes.
+.PHONY: rust-pte-fields-test
+rust-pte-fields-test:
+	mkdir -p build
+	cd rust-kernel && rustc --edition=2021 --test research/pte_fields.rs -o ../build/embers-pte-fields-tests
+	./build/embers-pte-fields-tests

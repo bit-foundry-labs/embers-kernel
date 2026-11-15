@@ -15,7 +15,10 @@ default = []
 fault-ud = []
 fault-pf = []
 fault-df = []
+fault-ro-write = []
+fault-nx-exec = []
 boot-ownership-smoke = []
+transition-stack-smoke = []
 
 [dependencies]
 

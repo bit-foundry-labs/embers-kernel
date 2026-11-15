@@ -68,3 +68,11 @@ agent-reported results, not independent CI verification. The integrated branch
 must pass the current required GitHub workflows, including QEMU checks, after a
 maintainer authorizes execution. Those regressions test normal boot behavior,
 not a real `CR3` transition.
+
+## Reconciliation with current `main`
+
+This draft was reconciled against `74f65df` following the M06 RO/NX
+cross-profile fault tests. The current boot-matrix workflow retains all
+QMP, ELF, stack, and paging checks, adding only a host-only transition-gate
+format/test step. No runtime CR3 code or privileged behavior was changed.
+CI must be rechecked at the reconciled head before review or merge.

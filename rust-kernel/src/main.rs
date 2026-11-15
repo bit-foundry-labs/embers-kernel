@@ -3,16 +3,46 @@
 #![no_main]
 #![deny(unsafe_op_in_unsafe_fn)]
 
+// Feature-only stack smoke is separate from fatal fault-injection runs.
+#[cfg(all(
+    feature = "transition-stack-smoke",
+    any(
+        feature = "fault-ud",
+        feature = "fault-pf",
+        feature = "fault-df",
+        feature = "fault-ro-write",
+        feature = "fault-nx-exec"
+    )
+))]
+compile_error!("transition-stack-smoke cannot be combined with fault injection modes.");
+
 // Each fault-injection feature deliberately terminates boot with its fault.
 // Combining modes would make the observed fault depend on execution order.
 #[cfg(any(
     all(feature = "fault-ud", feature = "fault-pf"),
     all(feature = "fault-ud", feature = "fault-df"),
-    all(feature = "fault-pf", feature = "fault-df"),
+    all(feature = "fault-pf", feature = "fault-df")
 ))]
 compile_error!(
     "QEMU fault-injection features are mutually exclusive: choose only one of fault-ud, fault-pf, or fault-df."
 );
+
+#[cfg(any(
+    all(
+        feature = "fault-ro-write",
+        any(
+            feature = "fault-ud",
+            feature = "fault-pf",
+            feature = "fault-df",
+            feature = "fault-nx-exec"
+        )
+    ),
+    all(
+        feature = "fault-nx-exec",
+        any(feature = "fault-ud", feature = "fault-pf", feature = "fault-df")
+    )
+))]
+compile_error!("QEMU permission fault tests are mutually exclusive with other fault modes.");
 
 mod address_provenance;
 mod arch;
@@ -24,7 +54,11 @@ mod frame_registry;
 mod kernel_state;
 mod memory;
 mod paging_mode;
+#[cfg(any(feature = "fault-ro-write", feature = "fault-nx-exec"))]
+mod permission_fault;
 mod serial;
+#[cfg(feature = "transition-stack-smoke")]
+mod transition_stack;
 
 use core::arch::asm;
 use core::panic::PanicInfo;
@@ -153,6 +187,53 @@ pub extern "C" fn kernel_entry() -> ! {
             halt_forever()
         }
     }
+    let protection = match paging_mode::sample_protection_state() {
+        Ok(protection) => protection,
+        Err(reason) => {
+            serial_write("ERROR: CPU paging protection preflight: ");
+            serial_write(match reason {
+                paging_mode::ProtectionError::MissingExtendedCpuid => "required CPUID leaf missing",
+                paging_mode::ProtectionError::InvalidPhysicalAddressWidth => "invalid MAXPHYADDR",
+                paging_mode::ProtectionError::InvalidLinearAddressWidth => "invalid linear width",
+                paging_mode::ProtectionError::NxUnsupported => "NX unsupported",
+                paging_mode::ProtectionError::WriteProtectDisabled => "CR0.WP disabled",
+                paging_mode::ProtectionError::NxDisabled => "EFER.NXE disabled",
+                paging_mode::ProtectionError::LongModeInactive => "EFER.LMA inactive",
+            });
+            serial_write("\n");
+            halt_forever();
+        }
+    };
+    // These are numeric observations under Limine's active mappings, not
+    // verified memory translations or evidence that a new stack can survive CR3.
+    let context = paging_mode::sample_active_context();
+    if !context.rsp_is_canonical_48() {
+        serial_write("ERROR: observed BSP RSP not 48-bit canonical\n");
+        halt_forever();
+    }
+    if !paging_mode::root_candidate_fits_width(
+        context.root_frame_candidate(),
+        protection.physical_address_bits,
+    ) {
+        serial_write("ERROR: CR3 root candidate violates MAXPHYADDR\n");
+        halt_forever();
+    }
+    serial_write("PAGING: inherited CR3 raw = ");
+    serial_write_hex(context.raw_cr3);
+    serial_write("\n");
+    serial_write("PAGING: root frame candidate = ");
+    serial_write_hex(context.root_frame_candidate());
+    serial_write("\n");
+    serial_write("PAGING: observed BSP RSP = ");
+    serial_write_hex(context.observed_rsp);
+    serial_write("\n");
+    serial_write("PAGING: MAXPHYADDR bits = ");
+    serial_write_hex(protection.physical_address_bits as u64);
+    serial_write("\n");
+    serial_write("PAGING: maximum linear bits = ");
+    serial_write_hex(protection.linear_address_bits as u64);
+    serial_write("\n");
+    serial_write("PAGING: CPU protection controls active (CR0.WP, EFER.NXE, EFER.LMA)\n");
     let state = kernel_state::KernelState::new(check_boot_memory());
     run_kernel(state)
 }
@@ -163,6 +244,25 @@ fn run_kernel(state: kernel_state::KernelState<16>) -> ! {
         halt_forever();
     }
     serial_write("MEMORY: boot reservation retained after initialization\n");
+
+    #[cfg(feature = "transition-stack-smoke")]
+    {
+        // SAFETY: Feature-only QEMU probe on the BSP, interrupts disabled,
+        // while Limine's original writable kernel-image mappings remain live.
+        let base = match unsafe { transition_stack::probe_inherited_mappings() } {
+            Ok(base) => base,
+            Err(_) => {
+                serial_write("ERROR: transition stack page probe failed\n");
+                halt_forever();
+            }
+        };
+        // Feature-only research diagnostic; never include the address in
+        // a production boot log or treat it as frame ownership evidence.
+        serial_write("STACK: static BSS virtual base = ");
+        serial_write_hex(base);
+        serial_write("\n");
+        serial_write("STACK: four aligned BSS pages writable under inherited mappings\n");
+    }
 
     #[cfg(feature = "fault-ud")]
     {
@@ -191,7 +291,35 @@ fn run_kernel(state: kernel_state::KernelState<16>) -> ! {
         serial_write("ERROR: #DF test returned unexpectedly\n");
     }
 
-    #[cfg(not(any(feature = "fault-ud", feature = "fault-pf", feature = "fault-df")))]
+    #[cfg(feature = "fault-ro-write")]
+    {
+        serial_write("TEST: supervisor read-only write target = ");
+        serial_write_hex(permission_fault::read_only_target());
+        serial_write("\n");
+        // SAFETY: Single-BSP feature-only QEMU test; the permission preflight
+        // passed, and the target is a private read-only ELF canary page.
+        unsafe { permission_fault::trigger_supervisor_write() };
+        serial_write("ERROR: read-only supervisor write unexpectedly succeeded\n");
+    }
+
+    #[cfg(feature = "fault-nx-exec")]
+    {
+        serial_write("TEST: supervisor NX fetch target = ");
+        serial_write_hex(permission_fault::non_executable_target());
+        serial_write("\n");
+        // SAFETY: Feature-only QEMU test of a private ELF data page. A
+        // failed NX protection must fault via the embedded UD2 canary.
+        unsafe { permission_fault::trigger_instruction_fetch() };
+        serial_write("ERROR: NX instruction fetch test returned unexpectedly\n");
+    }
+
+    #[cfg(not(any(
+        feature = "fault-ud",
+        feature = "fault-pf",
+        feature = "fault-df",
+        feature = "fault-ro-write",
+        feature = "fault-nx-exec"
+    )))]
     serial_write("READY: Embers Rust no_std entry reached.\n");
     halt_forever()
 }

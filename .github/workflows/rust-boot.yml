@@ -7,6 +7,8 @@ on:
       - "linker.ld"
       - "scripts/make_iso.sh"
       - "scripts/check_rust_elf.py"
+      - "scripts/check_elf_loads.py"
+      - "scripts/check_active_pte_qmp.py"
       - "Makefile"
       - ".github/workflows/rust-boot.yml"
   # Required checks must run even for documentation-only pull requests.
@@ -46,6 +48,10 @@ jobs:
         run: make rust-paging-mode-test
       - name: Test fail-closed transition gate on host
         run: make rust-transition-gate-test
+      - name: Test dedicated transition-stack range checks on host
+        run: make rust-transition-stack-test
+      - name: Test read-only QMP 4 KiB walker negative paths on host
+        run: make rust-active-pte-test
       - name: Install emulator and ISO tools
         shell: bash
         run: |
@@ -55,8 +61,20 @@ jobs:
           timeout 90s sudo apt-get install -y -o Acquire::Retries=0 -o Acquire::http::Timeout=12 -o Acquire::https::Timeout=12 qemu-system-x86 xorriso
           command -v qemu-system-x86_64
           command -v xorriso
+      - name: Reject stale unverified Limine worktree inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/make_iso.sh
+          mkdir -p limine-binary
+          printf 'do not trust local Limine files\n' > limine-binary/unverified-marker
       - name: Build and inspect ELF then ISO
-        run: make rust-iso
+        run: |
+          make rust-iso
+          # A stale local directory was not removed or compiled from.
+          test -f limine-binary/unverified-marker
+          test -d build/limine-verified-source/limine-binary
+          test -f "build/limine-binary-v12.9.6.tar.gz"
       - name: Boot QEMU and verify Rust READY
         shell: bash
         run: |
@@ -85,10 +103,57 @@ jobs:
           grep -Fq "READY: Embers Rust no_std entry reached." "build/embers-rust-serial-${{ matrix.profile_name }}.log"
           grep -Fq "ADDRESS: Limine HHDM and executable bases validated" "build/embers-rust-serial-${{ matrix.profile_name }}.log"
           grep -Fq "PAGING: active four-level mode validated" "build/embers-rust-serial-${{ matrix.profile_name }}.log"
+          python3 scripts/check_paging_snapshot.py "build/embers-rust-serial-${{ matrix.profile_name }}.log"
+          python3 scripts/check_elf_loads.py rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel --serial "build/embers-rust-serial-${{ matrix.profile_name }}.log"
           if grep -Fq "OWNERSHIP:" "build/embers-rust-serial-${{ matrix.profile_name }}.log"; then
             echo "Normal boot unexpectedly ran the optional ownership smoke test" >&2
             exit 1
           fi
+      - name: Inspect all ELF LOAD pages using paused QEMU physical reads
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_active_pte_qmp.py \
+            --cpu "${{ matrix.cpu_model }}" \
+            --iso build/embers-rust.iso \
+            --elf rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel
+      - name: Feature-gated transition stack BSS probe in QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd rust-kernel && cargo clippy --release --offline --features transition-stack-smoke -- -D warnings
+          cd ..
+          make rust-iso RUST_FEATURES="--features transition-stack-smoke"
+          log="build/embers-stack-smoke-${{ matrix.profile_name }}.log"
+          set +e
+          timeout --signal=TERM --kill-after=2s 20s \
+            qemu-system-x86_64 -cpu "${{ matrix.cpu_model }}" -m 256M \
+              -cdrom build/embers-rust.iso -display none \
+              -serial "file:$log" -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          echo "QEMU stack smoke exit status: $status"
+          cat "$log"
+          if [[ "$status" -ne 124 && "$status" -ne 0 ]]; then
+            echo "Feature-gated stack probe failed to run" >&2
+            exit 1
+          fi
+          if grep -Fq "ERROR:" "$log"; then
+            echo "Feature-gated stack probe reported an error" >&2
+            exit 1
+          fi
+          grep -Fq "STACK: four aligned BSS pages writable under inherited mappings" "$log"
+          grep -Fq "READY: Embers Rust no_std entry reached." "$log"
+      - name: Inspect feature-only transition stack mappings using paused QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Previous step built the feature ISO and its matching ELF.
+          python3 scripts/check_active_pte_qmp.py \
+            --cpu "${{ matrix.cpu_model }}" \
+            --iso build/embers-rust.iso \
+            --elf rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel \
+            --feature-stack
       - name: Preserve serial and exception logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -97,6 +162,7 @@ jobs:
           path: |
             build/embers-rust-serial-${{ matrix.profile_name }}.log
             build/embers-rust-debug-${{ matrix.profile_name }}.log
+            build/embers-stack-smoke-${{ matrix.profile_name }}.log
           if-no-files-found: ignore
 
   # Preserve the required status name while requiring every matrix lane.
