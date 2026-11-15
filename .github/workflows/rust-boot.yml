@@ -9,6 +9,7 @@ on:
       - "scripts/check_rust_elf.py"
       - "scripts/check_elf_loads.py"
       - "scripts/check_active_pte_qmp.py"
+      - "scripts/check_transition_stack_switch.py"
       - "Makefile"
       - ".github/workflows/rust-boot.yml"
   # Required checks must run even for documentation-only pull requests.
@@ -151,6 +152,40 @@ jobs:
             --iso build/embers-rust.iso \
             --elf rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel \
             --feature-stack
+      - name: One-shot transition-stack RSP switch under inherited mappings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_transition_stack_switch.py --self-test
+          cd rust-kernel && cargo clippy --release --offline --features transition-stack-switch -- -D warnings
+          cd ..
+          make rust-iso RUST_FEATURES="--features transition-stack-switch"
+          log="build/embers-stack-switch-${{ matrix.profile_name }}.log"
+          set +e
+          timeout --signal=TERM --kill-after=2s 20s \
+            qemu-system-x86_64 -cpu "${{ matrix.cpu_model }}" -m 256M \
+              -cdrom build/embers-rust.iso -display none \
+              -serial "file:$log" -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          echo "QEMU stack switch exit status: $status"
+          cat "$log"
+          if [[ "$status" -ne 124 && "$status" -ne 0 ]]; then
+            echo "Feature-only RSP switch QEMU execution failed" >&2
+            exit 1
+          fi
+          if grep -Fq "ERROR:" "$log"; then
+            echo "RSP switch feature reported ERROR" >&2
+            exit 1
+          fi
+          python3 scripts/check_transition_stack_switch.py \
+            --serial "$log" \
+            --elf rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel
+          python3 scripts/check_active_pte_qmp.py \
+            --cpu "${{ matrix.cpu_model }}" \
+            --iso build/embers-rust.iso \
+            --elf rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel \
+            --feature-stack
       - name: Preserve serial and exception logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -160,6 +195,7 @@ jobs:
             build/embers-rust-serial-${{ matrix.profile_name }}.log
             build/embers-rust-debug-${{ matrix.profile_name }}.log
             build/embers-stack-smoke-${{ matrix.profile_name }}.log
+            build/embers-stack-switch-${{ matrix.profile_name }}.log
           if-no-files-found: ignore
 
   # Preserve the required status name while requiring every matrix lane.
