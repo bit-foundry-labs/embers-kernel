@@ -21,7 +21,11 @@ own frame remains valid while the stack pointer moves. It is not an
 interrupt-safe or exception-recoverable general context switch.
 
 The single BSP first verifies the private static BSS range using the existing
-four-page write/read/restore probe. It accepts a returned callback pointer
+four-page write/read/restore probe. Range validation requires that the **exclusive
+stack top itself** be representable as a 64-bit RSP, not just the last byte of
+the allocation. This prevents a numeric range ending at `u64::MAX` from
+wrapping its stack-top pointer. The host regression checks this boundary. It
+accepts a returned callback pointer
 only inside the BSS stack's *top 4 KiB*, with natural alignment, and only when
 the RSP sampled before and after the ABI call matches. Failure halts with
 an explicit error before READY; this test cannot restore after a fault that
