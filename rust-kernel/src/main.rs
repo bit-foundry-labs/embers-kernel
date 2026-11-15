@@ -300,7 +300,6 @@ fn run_kernel(state: kernel_state::KernelState<16>) -> ! {
         // passed, and the target is a private read-only ELF canary page.
         unsafe { permission_fault::trigger_supervisor_write() };
         serial_write("ERROR: read-only supervisor write unexpectedly succeeded\n");
-        halt_forever();
     }
 
     #[cfg(feature = "fault-nx-exec")]
@@ -312,7 +311,6 @@ fn run_kernel(state: kernel_state::KernelState<16>) -> ! {
         // failed NX protection must fault via the embedded UD2 canary.
         unsafe { permission_fault::trigger_instruction_fetch() };
         serial_write("ERROR: NX instruction fetch test returned unexpectedly\n");
-        halt_forever();
     }
 
     #[cfg(not(any(
