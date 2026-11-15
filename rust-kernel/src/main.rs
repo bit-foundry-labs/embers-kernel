@@ -6,7 +6,13 @@
 // Feature-only stack smoke is separate from fatal fault-injection runs.
 #[cfg(all(
     feature = "transition-stack-smoke",
-    any(feature = "fault-ud", feature = "fault-pf", feature = "fault-df")
+    any(
+        feature = "fault-ud",
+        feature = "fault-pf",
+        feature = "fault-df",
+        feature = "fault-ro-write",
+        feature = "fault-nx-exec"
+    )
 ))]
 compile_error!("transition-stack-smoke cannot be combined with fault injection modes.");
 
@@ -15,11 +21,28 @@ compile_error!("transition-stack-smoke cannot be combined with fault injection m
 #[cfg(any(
     all(feature = "fault-ud", feature = "fault-pf"),
     all(feature = "fault-ud", feature = "fault-df"),
-    all(feature = "fault-pf", feature = "fault-df"),
+    all(feature = "fault-pf", feature = "fault-df")
 ))]
 compile_error!(
     "QEMU fault-injection features are mutually exclusive: choose only one of fault-ud, fault-pf, or fault-df."
 );
+
+#[cfg(any(
+    all(
+        feature = "fault-ro-write",
+        any(
+            feature = "fault-ud",
+            feature = "fault-pf",
+            feature = "fault-df",
+            feature = "fault-nx-exec"
+        )
+    ),
+    all(
+        feature = "fault-nx-exec",
+        any(feature = "fault-ud", feature = "fault-pf", feature = "fault-df")
+    )
+))]
+compile_error!("QEMU permission fault tests are mutually exclusive with other fault modes.");
 
 mod address_provenance;
 mod arch;
@@ -31,6 +54,8 @@ mod frame_registry;
 mod kernel_state;
 mod memory;
 mod paging_mode;
+#[cfg(any(feature = "fault-ro-write", feature = "fault-nx-exec"))]
+mod permission_fault;
 mod serial;
 #[cfg(feature = "transition-stack-smoke")]
 mod transition_stack;
@@ -266,7 +291,35 @@ fn run_kernel(state: kernel_state::KernelState<16>) -> ! {
         serial_write("ERROR: #DF test returned unexpectedly\n");
     }
 
-    #[cfg(not(any(feature = "fault-ud", feature = "fault-pf", feature = "fault-df")))]
+    #[cfg(feature = "fault-ro-write")]
+    {
+        serial_write("TEST: supervisor read-only write target = ");
+        serial_write_hex(permission_fault::read_only_target());
+        serial_write("\n");
+        // SAFETY: Single-BSP feature-only QEMU test; the permission preflight
+        // passed, and the target is a private read-only ELF canary page.
+        unsafe { permission_fault::trigger_supervisor_write() };
+        serial_write("ERROR: read-only supervisor write unexpectedly succeeded\n");
+    }
+
+    #[cfg(feature = "fault-nx-exec")]
+    {
+        serial_write("TEST: supervisor NX fetch target = ");
+        serial_write_hex(permission_fault::non_executable_target());
+        serial_write("\n");
+        // SAFETY: Feature-only QEMU test of a private ELF data page. A
+        // failed NX protection must fault via the embedded UD2 canary.
+        unsafe { permission_fault::trigger_instruction_fetch() };
+        serial_write("ERROR: NX instruction fetch test returned unexpectedly\n");
+    }
+
+    #[cfg(not(any(
+        feature = "fault-ud",
+        feature = "fault-pf",
+        feature = "fault-df",
+        feature = "fault-ro-write",
+        feature = "fault-nx-exec"
+    )))]
     serial_write("READY: Embers Rust no_std entry reached.\n");
     halt_forever()
 }
