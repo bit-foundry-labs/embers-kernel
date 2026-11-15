@@ -3,6 +3,22 @@
 #![no_main]
 #![deny(unsafe_op_in_unsafe_fn)]
 
+// The live stack switch is deliberately isolated from other fault and
+// stack experiments; normal boot and paging state remain unchanged.
+#[cfg(all(
+    feature = "transition-stack-switch",
+    any(
+        feature = "transition-stack-smoke",
+        feature = "boot-ownership-smoke",
+        feature = "fault-ud",
+        feature = "fault-pf",
+        feature = "fault-df",
+        feature = "fault-ro-write",
+        feature = "fault-nx-exec"
+    )
+))]
+compile_error!("transition-stack-switch cannot be combined with other test features.");
+
 // Feature-only stack smoke is separate from fatal fault-injection runs.
 #[cfg(all(
     feature = "transition-stack-smoke",
@@ -57,7 +73,7 @@ mod paging_mode;
 #[cfg(any(feature = "fault-ro-write", feature = "fault-nx-exec"))]
 mod permission_fault;
 mod serial;
-#[cfg(feature = "transition-stack-smoke")]
+#[cfg(any(feature = "transition-stack-smoke", feature = "transition-stack-switch"))]
 mod transition_stack;
 
 use core::arch::asm;
@@ -262,6 +278,28 @@ fn run_kernel(state: kernel_state::KernelState<16>) -> ! {
         serial_write_hex(base);
         serial_write("\n");
         serial_write("STACK: four aligned BSS pages writable under inherited mappings\n");
+    }
+
+    #[cfg(feature = "transition-stack-switch")]
+    {
+        // SAFETY: Single-BSP, interrupts-disabled feature-only test after
+        // inherited four-level paging and boot-memory preflight succeeded.
+        let (base, callback_rsp) = match unsafe { transition_stack::probe_stack_switch() } {
+            Ok(result) => result,
+            Err(_) => {
+                serial_write("ERROR: dedicated stack switch or restore failed\n");
+                halt_forever()
+            }
+        };
+        // Reuse the complete four-page QMP mapping observer for this ELF.
+        serial_write("STACK: static BSS virtual base = ");
+        serial_write_hex(base);
+        serial_write("\n");
+        serial_write("STACK: four aligned BSS pages writable under inherited mappings\n");
+        serial_write("STACK-SWITCH: callback RSP = ");
+        serial_write_hex(callback_rsp);
+        serial_write("\n");
+        serial_write("STACK-SWITCH: original BSP RSP restored\n");
     }
 
     #[cfg(feature = "fault-ud")]
