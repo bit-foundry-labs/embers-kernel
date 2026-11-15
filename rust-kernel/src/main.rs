@@ -3,6 +3,20 @@
 #![no_main]
 #![deny(unsafe_op_in_unsafe_fn)]
 
+
+#[cfg(all(
+    feature = "descriptor-evidence",
+    any(
+        feature = "transition-stack-smoke",
+        feature = "fault-ud",
+        feature = "fault-pf",
+        feature = "fault-df",
+        feature = "fault-ro-write",
+        feature = "fault-nx-exec"
+    )
+))]
+compile_error!("descriptor-evidence cannot be combined with fault or stack features.");
+
 // Feature-only stack smoke is separate from fatal fault-injection runs.
 #[cfg(all(
     feature = "transition-stack-smoke",
@@ -244,6 +258,37 @@ fn run_kernel(state: kernel_state::KernelState<16>) -> ! {
         halt_forever();
     }
     serial_write("MEMORY: boot reservation retained after initialization\n");
+
+
+    #[cfg(feature = "descriptor-evidence")]
+    {
+        let evidence = match arch::sample_descriptor_evidence() {
+            Some(value) => value,
+            None => {
+                serial_write("ERROR: descriptor state disagrees with statics\n");
+                halt_forever()
+            }
+        };
+        for (name, base, bytes) in [
+            ("GDT", evidence.gdt_base, evidence.gdt_bytes),
+            ("IDT", evidence.idt_base, evidence.idt_bytes),
+            ("TSS", evidence.tss_base, evidence.tss_bytes),
+            ("IST1", evidence.ist1_base, evidence.ist1_bytes),
+        ] {
+            serial_write("DESCRIPTOR: ");
+            serial_write(name);
+            serial_write(" base = ");
+            serial_write_hex(base);
+            serial_write("\nDESCRIPTOR: ");
+            serial_write(name);
+            serial_write(" bytes = ");
+            serial_write_hex(bytes);
+            serial_write("\n");
+        }
+        serial_write("DESCRIPTOR: TR selector = ");
+        serial_write_hex(evidence.tr_selector as u64);
+        serial_write("\nDESCRIPTOR: register state validated\n");
+    }
 
     #[cfg(feature = "transition-stack-smoke")]
     {
