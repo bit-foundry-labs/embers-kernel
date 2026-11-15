@@ -210,6 +210,9 @@ mod tests {
             cr3_root_candidate(0x0000_0000_0ff4_4123, 40),
             Ok(0x0ff4_4000)
         );
-        assert_eq!(cr3_root_candidate(0x123, 40), Err(FieldError::RootFrameZero));
+        assert_eq!(
+            cr3_root_candidate(0x123, 40),
+            Err(FieldError::RootFrameZero)
+        );
     }
 }
