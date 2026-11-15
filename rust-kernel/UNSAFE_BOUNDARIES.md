@@ -41,6 +41,9 @@ The current execution model is one bootstrap CPU (BSP), CPL0, interrupts disable
 
 **No page-table writer:** The QMP scripts read guest physical table entries from the **host** while QEMU is paused; they do not dereference unvalidated physical pointers in kernel mode. The `research/pte_fields.rs` helper checks only caller-supplied MAXPHYADDR/NXE against a small 4 KiB field subset. It cannot prove live CPU protections, ownership, alias freedom, or safe `CR3` switching.
 
+
+| [`arch.rs::sample_descriptor_evidence`](src/arch.rs) (feature-only) | A single CPL0 BSP after `install()`; existing descriptor and IST1 statics are mapped. SGDT/SIDT/STR observe installed register state. An unaligned raw-pointer load reads packed TSS.IST1. | Unexpected base/limit/selector/top rejects the feature boot; no CPU register or page table is modified. Host QMP checks translated descriptor/stack extents under inherited CR3, but cannot prove the hidden TR cache, the Limine BSP stack lifetime, or mappings surviving a new root. |
+
 ## Trusted data vs. actual authority
 
 - [`memory.rs::choose_pool`](src/memory.rs) is safe Rust numeric validation. It checks zero lengths, wraparound, overlaps (including reserved regions), alignment, and a minimum usable span. The resulting [`FramePool`](src/memory.rs) returns **physical address numbers**, not mapped pages or hardware ownership.
