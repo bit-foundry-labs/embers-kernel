@@ -27,6 +27,8 @@ mode_markers = (
     b"TEST: intentional invalid opcode",
     b"TEST: intentional page fault",
     b"TEST: intentional double fault through blocked #PF gate",
+    b"TEST: supervisor read-only write target = ",
+    b"TEST: supervisor NX fetch target = ",
 )
 assert sum(marker in data for marker in mode_markers) == 1, (
     "expected exactly one normal-boot or fault-injection marker"
