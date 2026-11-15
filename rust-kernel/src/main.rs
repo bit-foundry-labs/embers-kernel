@@ -73,7 +73,10 @@ mod paging_mode;
 #[cfg(any(feature = "fault-ro-write", feature = "fault-nx-exec"))]
 mod permission_fault;
 mod serial;
-#[cfg(any(feature = "transition-stack-smoke", feature = "transition-stack-switch"))]
+#[cfg(any(
+    feature = "transition-stack-smoke",
+    feature = "transition-stack-switch"
+))]
 mod transition_stack;
 
 use core::arch::asm;
