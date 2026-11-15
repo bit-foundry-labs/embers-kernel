@@ -1,8 +1,8 @@
 # Unsafe boundaries in the early Rust kernel
 
-**Audit scope:** `rust-kernel/src/main.rs`, `arch.rs`, and `boot_memory.rs` on `main` at commit `f12d9d87d2aa5262435b59522f7d70cc8a187681` (the PR #41 squash commit).
+**Audit scope:** Early Rust boot, memory, paging-state and experimental stack paths on `main` at `b2c88f1aaf8523c48d019a9a4c85e422243b1148` (through PR #73). The separate unmerged PR #74 adds an additional read-only CPU CPUID/CR0/EFER preflight and must retain its own CI evidence.
 
-**Status:** Source-level inventory, not formal verification or evidence that external pointers and hardware state are safe. This audit makes **no code changes**. Follow the linked function names, not line numbers; revisit the inventory when a source contract changes.
+**Status:** Source-level inventory, not formal verification or proof that external pointers and hardware state are safe. The companion host-only PTE field tests are pure numerical models; no privileged code or page tables are changed. Follow the function names rather than line numbers.
 
 The current execution model is one bootstrap CPU (BSP), CPL0, interrupts disabled, Limine-owned initial page tables and boot stack, no user address spaces, and no DMA isolation. All QEMU results apply to this environment, not arbitrary hardware or multicore configurations.
 
@@ -22,6 +22,19 @@ The current execution model is one bootstrap CPU (BSP), CPL0, interrupts disable
 | [`main.rs::embers_report_exception`, `halt_forever`](src/main.rs) | Called from nonreturning privileged stubs, or fatal boot paths. `cli` and `hlt` assume CPL0; halt loop intentionally cannot resume scheduling. | Execution stops; missing UART output is not evidence of successful isolation or fault recovery. | M03 QEMU fault log and M02 boot marker. **Untested:** multicore shutdown and IRQ-driven recovery. |
 | [`boot_memory.rs::initial_frame_pool`](src/boot_memory.rs) | Limine is the sole writer before handoff and supplies a stable, correctly aligned, initialized, mapped response struct; `read_volatile` does **not** validate pointer provenance. | Null response, zero/excessive count, null entry and malformed region *values* return errors; a nonnull dangling/unmapped pointer can still cause undefined behavior or a CPU fault before the value checks. | M04 host tests cover copied region validation; QEMU validates a normal Limine map. **Untested:** malicious/dangling response pointers, concurrent bootloader mutation and post-CR3 mapping lifetime. |
 | [`boot_memory.rs` pointer-array walk](src/boot_memory.rs) | Limine's `entries` pointer references at least the bounded `entry_count` valid, aligned pointers; each nonnull entry references an initialized `LimineMemoryMapEntry` with the expected ABI. | Count is bounded at 128, but this cannot establish that the pointed-to bytes are allocated or readable. Bad pointers can violate Rust safety before `choose_pool` runs. | M04 QEMU with an ordinary map; pure-Rust region tests. **Untested:** corrupted pointer array, ABI mismatch, pointer aliasing and transient mappings. |
+
+## Newer research and unsafe sites (post-PR #41)
+
+| Site | Assumption and obligation | Failure mode / unresolved risk | Existing evidence and missing tests |
+| --- | --- | --- | --- |
+| [`boot_addresses.rs::load`](src/boot_addresses.rs) | The Limine HHDM and executable response pointers must be nonnull, correctly aligned, initialized and readable under inherited mappings. The BSP owns the handoff; `read_volatile` does not authenticate pointer provenance. | A nonnull but dangling/unmapped pointer can cause a fault or undefined behavior **before** numeric address validation. Reclaiming Limine-owned response memory before copying it would invalidate the assumption. | Normal QEMU boot and pure arithmetic host tests; **no** adversarial proof of external response-pointer validity. |
+| [`paging_mode.rs::check_active`](src/paging_mode.rs) | The BSP is at CPL0 in x86-64 long mode before using read-only `mov` from CR0/CR4. | Invalid privilege or hardware handoff can fault. Selected bits alone do not establish PTE reservation, physical width or table ownership. | QEMU `qemu64` and `max` boot plus pure host bit tests; no hardware-independent proof. |
+| [`paging_mode.rs::sample_active_context`](src/paging_mode.rs) | CPL0, active Limine page tables and an initialized stack; read-only `mov` from CR3 and RSP in a single BSP. | RSP is sampled inside the function, not the Limine entry point; masking CR3 **discards control/reserved-bit context** and produces only a numeric root candidate. | QEMU register serial checks and paused host-side PTE observations; **no** proof of root frame ownership, whole-stack lifetime or all reserved bits. |
+| [`transition_stack.rs::probe_inherited_mappings`](src/transition_stack.rs) | Only the `transition-stack-smoke` feature, single BSP, interrupts disabled and a private aligned BSS buffer under writable Limine mappings. `static mut` is accessed through raw pointers without creating Rust references. | A missing page can fault the opt-in QEMU guest. The probe restores sampled bytes but does not establish effective security protections, alias freedom or safety after a root switch. | Feature-only volatile smoke and read-only QMP snapshots of four pages on both CPU profiles; **not** a live stack switch, device isolation or lifetime proof. |
+
+**Pending PR #74:** The proposed `paging_mode.rs::sample_protection_state` adds CPUID queries, read-only CR0 sampling, and `RDMSR` of EFER at CPL0. CPUID leaf availability, NX capability and the Limine long-mode handoff are explicit preconditions. If that PR merges, extend the authoritative table above with its new unsafe sites and final exact-head QEMU evidence; a successful register read alone is not full PTE permission validation.
+
+**No page-table writer:** The QMP scripts read guest physical table entries from the **host** while QEMU is paused; they do not dereference unvalidated physical pointers in kernel mode. The `research/pte_fields.rs` helper checks only caller-supplied MAXPHYADDR/NXE against a small 4 KiB field subset. It cannot prove live CPU protections, ownership, alias freedom, or safe `CR3` switching.
 
 ## Trusted data vs. actual authority
 
@@ -51,6 +64,7 @@ From the repository root on Ubuntu/WSL, with the pinned toolchain and QEMU depen
 make rust-check
 make rust-memory-test
 make rust-ledger-test
+make rust-pte-fields-test
 make rust-iso
 ```
 

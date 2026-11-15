@@ -93,3 +93,9 @@ rust-transition-stack-test:
 .PHONY: rust-active-pte-test
 rust-active-pte-test:
 	python3 scripts/check_active_pte_qmp.py --self-test
+# Pure MAXPHYADDR/PTE-field refusal tests; no CPU register access or page writes.
+.PHONY: rust-pte-fields-test
+rust-pte-fields-test:
+	mkdir -p build
+	cd rust-kernel && rustc --edition=2021 --test research/pte_fields.rs -o ../build/embers-pte-fields-tests
+	./build/embers-pte-fields-tests
