@@ -335,14 +335,9 @@ mod tests {
             );
         }
         for width in [0x2f, 49, 56, 58] {
+            let reported_widths = (width << 8) | 40;
             assert_eq!(
-                validate_protection(
-                    0x8000_0008,
-                    base.0,
-                    (width << 8) | 40,
-                    base.2,
-                    base.3,
-                ),
+                validate_protection(0x8000_0008, base.0, reported_widths, base.2, base.3),
                 Err(ProtectionError::InvalidLinearAddressWidth)
             );
         }
