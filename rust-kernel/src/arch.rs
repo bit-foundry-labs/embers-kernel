@@ -200,7 +200,6 @@ pub unsafe fn install() {
     }
 }
 
-
 #[cfg(feature = "descriptor-evidence")]
 pub struct DescriptorEvidence {
     pub gdt_base: u64,
