@@ -3,7 +3,8 @@
 
 Only the host reads QEMU physical memory. No guest HHDM dereference, page-table
 write, frame clearing, CR3 change, or physical ownership claim is made.
-Supports present 4 KiB, 2 MiB, and 1 GiB x86-64 leaves with bounded checks.
+Supports present 4 KiB and 2 MiB x86-64 leaves with bounded checks.
+1 GiB leaves fail closed until Page1GB capability evidence is added.
 """
 
 import argparse
@@ -26,6 +27,7 @@ FRAME_LINES = [
 ]
 ADDRESS_OK = "ADDRESS: Limine HHDM and executable bases validated"
 MAP_OK = "MEMORY: validated Limine map for physical frame accounting"
+PAGING_OK = "PAGING: active four-level mode validated"
 PRESENT = 1
 WRITABLE = 1 << 1
 USER = 1 << 2
@@ -36,7 +38,7 @@ def reservation_samples(serial: str) -> list[tuple[int, int]]:
     """Parse exactly two disjoint, adjacent, page-aligned frame observations."""
     lines = serial.splitlines()
     check(lines.count(READY) == 1 and lines.count(ADDRESS_OK) == 1
-          and lines.count(MAP_OK) == 1
+          and lines.count(MAP_OK) == 1 and lines.count(PAGING_OK) == 1
           and not any(line.startswith("ERROR:") for line in lines),
           "missing, duplicated, or contradictory boot markers")
     matches = HHDM_LINE.findall(serial)
@@ -64,11 +66,11 @@ def reservation_samples(serial: str) -> list[tuple[int, int]]:
 
 def walk_hhdm(root: int, va: int, read_word,
               physical_bits: int) -> tuple[int, int]:
-    """Walk one 48-bit VA, checking required fields of 4K/2M/1G leaves.
+    """Walk one validated four-level VA through 4 KiB or 2 MiB leaves.
 
-    This only checks selected present, RW, U/S, PS and MAXPHYADDR fields.
-    NX, PAT, cache attributes, protection keys, effective rights, all
-    reserved bits, frame identity and lifetime are not fully validated.
+    This checks selected present, RW, effective U/S, PS and MAXPHYADDR fields.
+    It does not validate CR0.WP, SMEP, SMAP, PKE, NX, cache attributes, full
+    PAT semantics, all reserved bits, frame identity, or lifetime.
     """
     check(canonical_48(va), "noncanonical HHDM virtual address")
     check(32 <= physical_bits <= 52, "invalid MAXPHYADDR")
@@ -91,10 +93,11 @@ def walk_hhdm(root: int, va: int, read_word,
         check(field >> physical_bits == 0, "PTE exceeds MAXPHYADDR")
         huge = raw & HUGE != 0
         check(not (huge and shift == 39), "unsupported PML4 large-page bit")
-        if huge and shift in (30, 21):
+        if huge and shift == 30:
+            check(False, "1 GiB HHDM leaf unsupported without Page1GB evidence")
+        if huge and shift == 21:
             size = 1 << shift
-            # Lower address-field bits in a huge leaf must be zero, except
-            # bit 12 which has the architectural PAT role at these levels.
+            # Bit 12 is the architectural PAT role in a 2 MiB leaf.
             check(field & (size - 1) & ~(1 << 12) == 0,
                   "reserved low physical-address bits in huge PTE")
             base = field & ~(size - 1)
@@ -198,6 +201,7 @@ def self_test() -> None:
         "ADDRESS: Limine HHDM and executable bases validated",
         f"ADDRESS: HHDM offset = 0x{hhdm:016x}",
         MAP_OK,
+        PAGING_OK,
         f"MEMORY: frame claim 1 = 0x{frame:016x}",
         f"MEMORY: frame claim 2 = 0x{frame + PAGE:016x}",
         READY,
@@ -227,57 +231,85 @@ def self_test() -> None:
     assert inspect_reservations(samples, root, two_meg.__getitem__, 40) == [
         (frame, 1 << 21), (frame + PAGE, 1 << 21)
     ]
-    one_gig = dict(cells)
-    one_gig[pdpt] = 0x83  # 1 GiB superpage, base zero
-    assert inspect_reservations(samples, root, one_gig.__getitem__, 40) == [
-        (frame, 1 << 30), (frame + PAGE, 1 << 30)
+    two_meg_pat = dict(cells)
+    two_meg_pat[pd] = 0x1083  # 2 MiB leaf: PAT bit 12 is permitted.
+    assert inspect_reservations(samples, root, two_meg_pat.__getitem__, 40) == [
+        (frame, 1 << 21), (frame + PAGE, 1 << 21)
     ]
 
-    def rejected(action, why):
+    def rejected(action, expected):
         try:
             action()
-        except (ValueError, KeyError):
+        except ValueError as error:
+            check(expected in str(error),
+                  f"wrong rejection: expected {expected!r}, got {error!s}")
             return
-        raise AssertionError(f"accepted bad HHDM evidence: {why}")
+        raise AssertionError(f"accepted bad HHDM evidence: {expected}")
 
-    rejected(lambda: reservation_samples(""), "empty metadata")
-    rejected(lambda: reservation_samples(sample_log * 2), "duplicate metadata")
+    rejected(lambda: reservation_samples(""), "boot markers")
+    rejected(lambda: reservation_samples(sample_log * 2), "boot markers")
     rejected(lambda: reservation_samples(
         sample_log.replace(f"0x{frame + PAGE:016x}", f"0x{frame + 2 * PAGE:016x}")),
-        "nonadjacent reservations")
+        "nonadjacent")
     rejected(lambda: reservation_samples(
         sample_log.replace(f"0x{frame:016x}", f"0x{frame + 1:016x}")),
-        "unaligned frame")
+        "invalid, nonadjacent")
     rejected(lambda: reservation_samples(
         sample_log.replace(f"0x{hhdm:016x}", "0x0000800000000000")),
-        "noncanonical HHDM offset")
+        "invalid HHDM offset")
     rejected(lambda: reservation_samples(
         sample_log.replace(f"0x{hhdm:016x}", "0xfffffffffffff000")),
-        "HHDM offset overflow")
+        "overflows or is noncanonical")
     rejected(lambda: reservation_samples(
-        sample_log.replace(MAP_OK, "ERROR: corrupt handoff")), "error marker")
+        sample_log.replace(MAP_OK, "ERROR: corrupt handoff")), "boot markers")
+    rejected(lambda: reservation_samples(sample_log.replace(PAGING_OK, "")),
+             "boot markers")
     rejected(lambda: inspect_reservations(
-        [(frame, va)], root, cells.__getitem__, 40), "incomplete reservation set")
+        [(frame, va)], root, cells.__getitem__, 40), "missing or nonadjacent")
     bad = dict(cells)
     bad[pt] = (frame + 2 * PAGE) | 3
     rejected(lambda: inspect_reservations(
-        samples, root, bad.__getitem__, 40), "incorrect physical backing")
-    for bad_cells, label in [
-        ({**cells, pt: cells[pt] & ~1}, "nonpresent leaf"),
+        samples, root, bad.__getitem__, 40), "differs from reported")
+    rejected(lambda: walk_hhdm(0, va, cells.__getitem__, 40),
+             "invalid inherited CR3 root")
+    rejected(lambda: walk_hhdm(PHYSICAL_RAM, va, cells.__getitem__, 40),
+             "PTE address outside observed")
+    outside_table = dict(cells)
+    outside_table[pml4] = PHYSICAL_RAM | 3
+    rejected(lambda: walk_hhdm(root, va, outside_table.__getitem__, 40),
+             "next page table outside observed")
+    outside_leaf = dict(cells)
+    outside_leaf[pd] = PHYSICAL_RAM | 0x83
+    rejected(lambda: walk_hhdm(root, va, outside_leaf.__getitem__, 40),
+             "HHDM leaf outside configured")
+    fully_user_two_meg = {key: value | USER for key, value in cells.items()}
+    fully_user_two_meg[pd] = 0x87
+    rejected(lambda: inspect_reservations(
+        samples, root, fully_user_two_meg.__getitem__, 40),
+        "user-accessible at every level")
+    one_gig = dict(cells)
+    one_gig[pdpt] = 0x83
+    rejected(lambda: walk_hhdm(root, va, one_gig.__getitem__, 40),
+             "1 GiB HHDM leaf unsupported")
+    for bad_cells, expected in [
+        ({**cells, pt: cells[pt] & ~1}, "nonpresent HHDM PTE"),
         ({**cells, pd: cells[pd] & ~2}, "read-only ancestor"),
         ({**{key: value | USER for key, value in cells.items()}},
-         "fully user-accessible path"),
-        ({**cells, pml4: cells[pml4] | 0x80}, "large PML4"),
-        ({**cells, pd: 0x83 | (1 << 13)}, "2 MiB reserved field"),
-        ({**cells, pdpt: 0x83 | (1 << 20)}, "1 GiB reserved field"),
-        ({**cells, pt: cells[pt] | (1 << 40)}, "MAXPHYADDR"),
+         "user-accessible at every level"),
+        ({**cells, pml4: cells[pml4] | 0x80}, "unsupported PML4"),
+        ({**cells, pd: 0x83 | (1 << 13)}, "reserved low physical"),
+        ({**cells, pt: cells[pt] | (1 << 40)}, "PTE exceeds MAXPHYADDR"),
     ]:
         rejected(lambda c=bad_cells: inspect_reservations(
-            samples, root, c.__getitem__, 40), label)
+            samples, root, c.__getitem__, 40), expected)
+    maxphyaddr_only = dict(cells)
+    maxphyaddr_only[pt] |= 1 << 40
+    rejected(lambda: walk_hhdm(root, va, maxphyaddr_only.__getitem__, 40),
+             "PTE exceeds MAXPHYADDR")
     for width in (0, 31, 53):
         rejected(lambda width=width: inspect_reservations(
-            samples, root, cells.__getitem__, width), "invalid physical width")
-    print("PASS: 4 KiB, 2 MiB and 1 GiB HHDM walks and negative fixtures (host-only)")
+            samples, root, cells.__getitem__, width), "invalid MAXPHYADDR")
+    print("PASS: 4 KiB and 2 MiB HHDM walks and targeted negative fixtures (host-only)")
 
 
 if __name__ == "__main__":
