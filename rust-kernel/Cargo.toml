@@ -19,6 +19,7 @@ fault-ro-write = []
 fault-nx-exec = []
 boot-ownership-smoke = []
 transition-stack-smoke = []
+descriptor-evidence = []
 
 [dependencies]
 

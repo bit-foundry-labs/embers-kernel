@@ -200,6 +200,74 @@ pub unsafe fn install() {
     }
 }
 
+#[cfg(feature = "descriptor-evidence")]
+pub struct DescriptorEvidence {
+    pub gdt_base: u64,
+    pub gdt_bytes: u64,
+    pub idt_base: u64,
+    pub idt_bytes: u64,
+    pub tss_base: u64,
+    pub tss_bytes: u64,
+    pub ist1_base: u64,
+    pub ist1_bytes: u64,
+    pub tr_selector: u16,
+}
+
+/// Read the installed BSP descriptor state without modifying any register.
+/// This validates values, not physical backing, hidden TR cache or CR3 safety.
+#[cfg(feature = "descriptor-evidence")]
+pub fn sample_descriptor_evidence() -> Option<DescriptorEvidence> {
+    let mut gdtr = DescriptorTablePointer { limit: 0, base: 0 };
+    let mut idtr = DescriptorTablePointer { limit: 0, base: 0 };
+    let tr_selector: u16;
+    // SAFETY: Single CPL0 BSP after install(); SGDT, SIDT and STR only write
+    // to the provided local output locations, never to privileged registers.
+    unsafe {
+        asm!("sgdt [{ptr}]", ptr = in(reg) &mut gdtr, options(nostack, preserves_flags));
+        asm!("sidt [{ptr}]", ptr = in(reg) &mut idtr, options(nostack, preserves_flags));
+        asm!("str {selector:x}", selector = out(reg) tr_selector,
+            options(nomem, nostack, preserves_flags));
+    }
+    // SAFETY: The packed descriptors and TSS.IST1 can be unaligned;
+    // read_unaligned uses raw pointers without creating aligned references.
+    let (gdt_base, gdt_limit, idt_base, idt_limit, ist1_top) = unsafe {
+        (
+            core::ptr::read_unaligned(addr_of!(gdtr.base)),
+            core::ptr::read_unaligned(addr_of!(gdtr.limit)),
+            core::ptr::read_unaligned(addr_of!(idtr.base)),
+            core::ptr::read_unaligned(addr_of!(idtr.limit)),
+            core::ptr::read_unaligned(addr_of!(TSS.ist).cast::<u64>()),
+        )
+    };
+    let gdt_bytes = size_of::<[u64; 5]>() as u64;
+    let idt_bytes = size_of::<[IdtGate; 256]>() as u64;
+    let tss_bytes = size_of::<TaskStateSegment>() as u64;
+    // SAFETY: The single BSP owns this static during this feature-only snapshot;
+    // addr_of! creates a raw address without dereferencing the stack.
+    let ist1_base = unsafe { addr_of!(DOUBLE_FAULT_STACK.0) as u64 };
+    let expected_top = ist1_base.checked_add(DOUBLE_FAULT_STACK_BYTES as u64)?;
+    if gdt_base != addr_of!(GDT) as u64
+        || idt_base != addr_of!(IDT) as u64
+        || tr_selector != GDT_TSS
+        || gdt_limit as u64 + 1 != gdt_bytes
+        || idt_limit as u64 + 1 != idt_bytes
+        || ist1_top != expected_top
+    {
+        return None;
+    }
+    Some(DescriptorEvidence {
+        gdt_base,
+        gdt_bytes,
+        idt_base,
+        idt_bytes,
+        tss_base: addr_of!(TSS) as u64,
+        tss_bytes,
+        ist1_base,
+        ist1_bytes: DOUBLE_FAULT_STACK_BYTES as u64,
+        tr_selector,
+    })
+}
+
 /// # Safety
 /// CPL0-only deliberate fault. Never use as a normal memory-read API.
 #[cfg(any(feature = "fault-pf", feature = "fault-df"))]
