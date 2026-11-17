@@ -52,7 +52,7 @@ A passing QEMU or host-test check proves only the tested milestone. It does **no
 git clone https://github.com/bit-foundry-labs/embers-kernel.git
 cd embers-kernel
 sudo apt-get update
-sudo apt-get install -y make binutils python3 qemu-system-x86 xorriso curl tar
+sudo apt-get install -y make binutils gcc libc6-dev python3 qemu-system-x86 xorriso curl tar
 cd rust-kernel
 rustup toolchain install 1.90.0 --component clippy,rustfmt --target x86_64-unknown-none
 cd ..
