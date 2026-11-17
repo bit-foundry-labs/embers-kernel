@@ -41,6 +41,9 @@ The current execution model is one bootstrap CPU (BSP), CPL0, interrupts disable
 
 **No page-table writer:** The QMP scripts read guest physical table entries from the **host** while QEMU is paused; they do not dereference unvalidated physical pointers in kernel mode. The `research/pte_fields.rs` helper checks only caller-supplied MAXPHYADDR/NXE against a small 4 KiB field subset. It cannot prove live CPU protections, ownership, alias freedom, or safe `CR3` switching.
 
+
+| [`transition_stack.rs::probe_stack_switch`](src/transition_stack.rs) (`transition-stack-switch` feature) | Single CPL0 BSP, interrupts disabled, 4 KiB-aligned 16 KiB private BSS range mapped writable under Limine and a no-argument SysV callback that returns normally. Assembly temporarily swaps RSP, preserves callee-saved RBX and restores original RSP before returning to Rust. | A broken stack or callback can fault before restoration and halt or double-fault; no recovery or atomic rollback exists. The callback RSP and old/new samples are checked only on normal return. QEMU and host fixtures establish a narrow inherited-root test, not exclusive frame ownership, stack lifetime or safe CR3 replacement. |
+
 ## Trusted data vs. actual authority
 
 - [`memory.rs::choose_pool`](src/memory.rs) is safe Rust numeric validation. It checks zero lengths, wraparound, overlaps (including reserved regions), alignment, and a minimum usable span. The resulting [`FramePool`](src/memory.rs) returns **physical address numbers**, not mapped pages or hardware ownership.
