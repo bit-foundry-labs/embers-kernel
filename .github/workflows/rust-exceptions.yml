@@ -19,7 +19,7 @@ permissions:
 jobs:
   exceptions:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Rust formatting and lints
@@ -73,7 +73,7 @@ jobs:
           set -euo pipefail
           # Avoid a ten-minute hang when Ubuntu package mirrors are unreachable.
           timeout 60s sudo apt-get update -o Acquire::Retries=0 -o Acquire::http::Timeout=12 -o Acquire::https::Timeout=12
-          timeout 90s sudo apt-get install -y -o Acquire::Retries=0 -o Acquire::http::Timeout=12 -o Acquire::https::Timeout=12 qemu-system-x86 xorriso
+          timeout 240s sudo apt-get install -y --no-install-recommends -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 qemu-system-x86 xorriso
           command -v qemu-system-x86_64
           command -v xorriso
       - name: Boot normal kernel and inject intentional CPU faults
