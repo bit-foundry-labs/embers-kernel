@@ -32,11 +32,13 @@ This is a research sequence, not a release schedule. Work is tracked in issues a
 
 ## Available first contributions
 
-- [#8: independent Ubuntu/WSL QEMU reproduction](https://github.com/bit-foundry-labs/embers-kernel/issues/8), documentation-only.
-- [#33: inventory early boot `unsafe` boundaries](https://github.com/bit-foundry-labs/embers-kernel/issues/33), documentation-only.
-- [#9: tested QEMU CPU baseline matrix](https://github.com/bit-foundry-labs/embers-kernel/issues/9), intermediate architecture/compatibility.
+- **New contributor, documentation-only:** [#89: map normal Rust boot from Limine to `READY`](https://github.com/bit-foundry-labs/embers-kernel/issues/89). Start with `kernel_entry()`, trace the existing modules, and propose a small source-linked map. QEMU is not required.
+- **Reproducibility, already under review:** [#8: independent Ubuntu/WSL QEMU reproduction](https://github.com/bit-foundry-labs/embers-kernel/issues/8) has [PR #87](https://github.com/bit-foundry-labs/embers-kernel/pull/87) open; coordinate before doing overlapping work.
+- **Advanced review:** [#84: independent M06 QMP/paging review](https://github.com/bit-foundry-labs/embers-kernel/issues/84), suitable for contributors with relevant low-level experience.
 
-Claim an issue by commenting with your intended approach and environment. Each issue has testable acceptance criteria. Do not boot on physical hardware.
+**Completed examples, not unclaimed work:** [#33 unsafe-boundary inventory](https://github.com/bit-foundry-labs/embers-kernel/issues/33) and [#9 QEMU CPU baseline](https://github.com/bit-foundry-labs/embers-kernel/issues/9).
+
+Claim an available issue by commenting with your intended approach and environment. Check issue state and linked PRs before starting. Do not boot on physical hardware.
 
 ## Definition of a good first issue
 An expected result, a bounded number of files, concrete tests, and an explicit limitation. Missing performance data is an invitation to measure, not invent numbers.
