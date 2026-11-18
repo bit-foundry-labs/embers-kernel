@@ -20,6 +20,8 @@ Create a six-to-ten-row table in your notes:
 | Memory bookkeeping | Find the current call site | Distinguish accounting from isolation | Evidence or limitation |
 | READY and halt | Find the current call site | Normal boot path | Serial marker and intentional halt |
 
+**Worked example:** For the serial initialization stage, link [`kernel_entry()` in `main.rs`](../../rust-kernel/src/main.rs), note the early BSP's COM1 assumption, and record that `serial_init()` runs before the first `EMBERS:` banner. This observation does not prove physical UART compatibility.
+
 The rows above are prompts, **not a claim about exact execution order**. Trace the order in the current source, and distinguish normal boot from feature-gated fault and ownership smoke tests.
 
 ## Reproduce, if you have an Ubuntu/WSL environment
@@ -32,6 +34,6 @@ Answer in a few sentences: Does reaching `READY` prove a user-mode process exist
 
 ## Contribute
 
-[Issue #89](https://github.com/bit-foundry-labs/embers-kernel/issues/89) proposes a bounded `rust-kernel/BOOT_PATH_MAP.md` documentation PR. Check that the issue is still open and coordinate before starting. Keep all function names and claims anchored to the then-current `main`.
+[Issue #89](https://github.com/bit-foundry-labs/embers-kernel/issues/89) proposes a bounded `rust-kernel/BOOT_PATH_MAP.md` documentation PR. `archweave` has already volunteered and been invited to lead that work. You can do this exercise independently, then coordinate on the issue to offer review or feedback rather than opening a duplicate PR. Keep all function names and claims anchored to the then-current `main`.
 
 **Completion evidence:** a source-linked sequence, one explicit unproven property, and a clear statement of whether any tests were run.

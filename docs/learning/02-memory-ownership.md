@@ -14,11 +14,11 @@ Draw or write a state trace for a single frame:
 
 1. Initially available for accounting.
 2. Owner A makes a valid claim.
-3. Owner B attempts a conflicting claim.
-4. A frame enters a quarantined state, if that transition is supported by the inspected implementation.
-5. A later claim attempts to reuse the quarantined frame.
+3. Owner B attempts to access or quarantine A's frame using A's token; record the `WrongOwner` result rather than assuming `acquire()` selects an already-owned frame.
+4. Owner A quarantines the frame; subsequent access with that token is rejected as `Quarantined`.
+5. A subsequent `acquire()` selects a different available frame, and the quarantined frame is not reallocated.
 
-For each step, cite the relevant function or test and state the **observed** accept/reject outcome. If a step is not implemented or not tested, label it **unverified**, rather than filling it in from the intended design.
+For each step, cite [`FrameLedger::acquire`, `physical_address`, and `quarantine`](../../rust-kernel/src/frame_ledger.rs) and the tests `wrong_owner_cannot_observe_or_quarantine_a_frame` and `quarantined_frames_are_never_reallocated` in that file. State the **observed** accept/reject outcome. The ledger enforces bookkeeping rules for symbolic tokens, not hardware memory permissions. If a step is not implemented or not tested, label it **unverified**, rather than filling it in from the intended design.
 
 ## Test or inspect
 

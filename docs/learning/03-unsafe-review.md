@@ -6,7 +6,7 @@
 
 ## Observe
 
-Read [the code review standard](../CODE_REVIEW_STANDARD.md) and the [unsafe boundary inventory](../../rust-kernel/UNSAFE_BOUNDARIES.md). Locate one small `unsafe` block in the current Rust source. Avoid changing privileged code as part of this module.
+Read [the code review standard](../CODE_REVIEW_STANDARD.md) and the [unsafe boundary inventory](../../rust-kernel/UNSAFE_BOUNDARIES.md). Locate one small `unsafe` block in the current Rust source. For a manageable starting point, inspect [`boot_addresses.rs::load`](../../rust-kernel/src/boot_addresses.rs): it reads Limine response pointers via `read_volatile`. The surrounding checks reject null responses, but a nonnull pointer is not thereby proven valid. Avoid changing privileged code as part of this module.
 
 ## Explain
 
@@ -19,6 +19,8 @@ Write a compact review record:
 | Who establishes the precondition? | Link to validation or caller obligations |
 | What could go wrong? | One concrete invalid pointer, aliasing, alignment, lifetime, or CPU-state scenario |
 | How is failure handled? | Link to an actual guard or test; otherwise say **not established** |
+
+**Example review observation:** `boot_addresses.rs::load` relies on valid mapped Limine response pointers; checking for null cannot prove that an arbitrary nonnull address is dereferenceable. Distinguish that handoff assumption from a runtime validation that does not exist.
 
 A `SAFETY:` comment is an explanation, **not a proof**. Distinguish an assumption from a runtime check and from an invariant tested under QEMU.
 

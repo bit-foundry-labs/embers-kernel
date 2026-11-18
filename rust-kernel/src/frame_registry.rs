@@ -69,7 +69,17 @@ impl<const N: usize> FrameRegistry<N> {
             .ok_or(RegistryError::AddressOverflow)?;
 
         for existing in self.entries[..self.count].iter().flatten() {
-            let existing_end = existing.start + existing.pages * PAGE_BYTES;
+            // Every stored reservation passed validate(), including both checked
+            // arithmetic operations. Recheck here so future insertion paths
+            // cannot silently turn a corrupted invariant into an overflow.
+            let existing_bytes = existing
+                .pages
+                .checked_mul(PAGE_BYTES)
+                .ok_or(RegistryError::AddressOverflow)?;
+            let existing_end = existing
+                .start
+                .checked_add(existing_bytes)
+                .ok_or(RegistryError::AddressOverflow)?;
             if start < existing_end && existing.start < end {
                 return Err(RegistryError::Overlap);
             }
@@ -231,6 +241,38 @@ mod tests {
         }
         assert_eq!(registry.count(), 0);
         assert_eq!(registry.entry(0), None);
+    }
+
+    #[test]
+    fn near_address_limit_valid_reservation_remains_disjoint() {
+        let mut registry = FrameRegistry::<2>::new();
+        let last_page = u64::MAX - (PAGE_BYTES - 1);
+        let reservation = registry.reserve(last_page - PAGE_BYTES, 1, 1).unwrap();
+        assert_eq!(reservation.start, last_page - PAGE_BYTES);
+        assert_eq!(
+            registry.reserve(last_page - PAGE_BYTES, 1, 2),
+            Err(RegistryError::Overlap)
+        );
+        assert_eq!(registry.count(), 1);
+        assert_eq!(registry.entry(0), Some(reservation));
+    }
+
+    #[test]
+    fn invalid_existing_endpoint_fails_closed_without_mutation() {
+        let mut registry = FrameRegistry::<2>::new();
+        // Simulate an invalid internal record to test the defensive invariant.
+        registry.entries[0] = Some(FrameReservation {
+            start: u64::MAX - (PAGE_BYTES - 1),
+            pages: 2,
+            owner: 1,
+        });
+        registry.count = 1;
+        assert_eq!(
+            registry.reserve(MIN_PHYSICAL_ADDRESS, 1, 2),
+            Err(RegistryError::AddressOverflow)
+        );
+        assert_eq!(registry.count(), 1);
+        assert_eq!(registry.entry(1), None);
     }
 
     #[test]

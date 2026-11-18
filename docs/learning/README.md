@@ -6,7 +6,7 @@ Learn systems engineering by investigating **the real Embers source**, reproduci
 
 | Module | Prerequisites | You will produce | First contribution |
 | --- | --- | --- | --- |
-| [01 — Trace a boot](01-boot-path.md) | Read Rust functions and GitHub diffs; QEMU optional | A source-linked boot sequence with an explicit evidence boundary | [Issue #89](https://github.com/bit-foundry-labs/embers-kernel/issues/89) |
+| [01 — Trace a boot](01-boot-path.md) | Read Rust functions and GitHub diffs; QEMU optional | A source-linked boot sequence with an explicit evidence boundary | [Issue #89](https://github.com/bit-foundry-labs/embers-kernel/issues/89): `archweave` has volunteered; coordinate or offer review |
 | [02 — Who owns a frame?](02-memory-ownership.md) | Basic Rust enums and unit tests | A claim/deny/quarantine trace and one test question | A small issue or review proposal; do not assume an open coding task |
 | [03 — Review an unsafe boundary](03-unsafe-review.md) | Rust borrowing and pointer basics | A concise, evidence-linked review of one `unsafe` contract | Review a PR or propose a documentation correction |
 
@@ -16,9 +16,13 @@ Each module uses **observe → explain → test or inspect → critique → cont
 
 1. Read [CONTRIBUTING](../../CONTRIBUTING.md), the [Code of Conduct](../../CODE_OF_CONDUCT.md), and the [research roadmap](../CONTRIBUTOR_ROADMAP.md).
 2. Choose one module and follow its evidence exercise. Use the current `main` branch, since symbols and implementation details change.
-3. Check whether an issue is still open and unclaimed; comment with your intended scope before starting. For an untracked finding, discuss it before opening a large PR.
+3. Read the issue discussion before starting. An open issue may already have a volunteer; for example, `archweave` is leading #89. Coordinate or offer review rather than duplicating a contribution. For an untracked finding, discuss it before opening a large PR.
 4. State exactly what you ran. If you only inspected code, say **“source review only; tests not run.”** A CI badge is not evidence that you ran tests locally.
 5. Use the [review standard](../CODE_REVIEW_STANDARD.md) to make your finding actionable. Technical review is a valid contribution even without writing kernel code.
+
+## Check your evidence
+
+Before sharing an exercise, ask: **Did I link the specific current source or test?** **Did I separate what I observed from what I assumed?** **Did I list exactly which commands I ran, or clearly say tests were not run?** A useful learning artifact answers all three.
 
 ## What Embers currently proves, and what it does not
 
