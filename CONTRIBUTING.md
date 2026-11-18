@@ -2,6 +2,8 @@
 
 The best first contribution is small enough to explain, test, and review.
 
+New to kernel engineering? The [Learning Lab](docs/learning/README.md) offers three source-linked exercises you can start in a browser. Report precisely what you reviewed or tested; the exercises do not grant GitHub permissions.
+
 ## Before starting
 
 1. Read [the README](README.md), [project roadmap](docs/CONTRIBUTOR_ROADMAP.md), and [Code of Conduct](CODE_OF_CONDUCT.md).
@@ -39,9 +41,9 @@ Do not change unrelated code, disable failing tests, commit model credentials, i
 
 ## Your first pull request: a short walkthrough
 
-1. **Pick an open, bounded task.** Start with [#89 (boot-path map)](https://github.com/bit-foundry-labs/embers-kernel/issues/89): trace the existing Rust boot path and draft a short, source-linked explanation without running QEMU. [Issue #8](https://github.com/bit-foundry-labs/embers-kernel/issues/8) already has [PR #87](https://github.com/bit-foundry-labs/embers-kernel/pull/87) under review; offer independent verification rather than duplicating that contribution. Comment on your selected issue before starting.
+1. **Pick an open, bounded task.** Try the [Learning Lab boot-path exercise](docs/learning/01-boot-path.md) and coordinate on [#89](https://github.com/bit-foundry-labs/embers-kernel/issues/89) if you want to contribute: `archweave` has already volunteered to lead its requested documentation PR. Offer source-linked review help rather than duplicating that work. [Issue #8](https://github.com/bit-foundry-labs/embers-kernel/issues/8) already has [PR #87](https://github.com/bit-foundry-labs/embers-kernel/pull/87) under review; offer independent verification rather than duplicating that contribution. Comment on your selected issue before starting.
 2. **Fork and branch from current `main`.** Follow the [README setup and headless QEMU instructions](README.md#boot-embers-in-headless-qemu) if your task requires execution. Do not run the kernel on physical hardware.
-3. **Make one reviewable change.** For #89, add only the requested boot-path documentation; link the actual functions and distinguish observed QEMU behavior from unimplemented isolation. Avoid unrelated refactoring.
+3. **Make one reviewable change.** For boot-path documentation or review, link the actual functions and distinguish observed QEMU behavior from unimplemented isolation. Coordinate with the contributor leading #89 before proposing edits to that map; avoid unrelated refactoring.
 4. **Report evidence precisely.** Run relevant commands if your environment supports them, recording commands and results. Otherwise write **“Documentation-only; tests not run.”** Never imply that CI, QEMU, or hardware tests ran locally when they did not.
 5. **Open the PR and respond to review.** Link the issue, summarize the change and limitations, complete the PR template, and address reviewer feedback on the same branch. Maintainers verify required CI and decide whether to merge.
 

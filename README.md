@@ -6,7 +6,7 @@ We're investigating what the kernel should control when applications and AI agen
 
 **This is a research effort, not a working general-purpose operating system or a benchmark-proven AI-optimized kernel.**
 
-[Validation Lab](https://embers-kernel-validation-lab.brittneyleighb.chatgpt.site) · [Contribute](CONTRIBUTING.md) · [Research roadmap](docs/CONTRIBUTOR_ROADMAP.md) · [Open issues](https://github.com/bit-foundry-labs/embers-kernel/issues) · [Contributor launch milestone](https://github.com/bit-foundry-labs/embers-kernel/issues/24)
+[Start learning](docs/learning/README.md) · [Validation Lab](https://embers-kernel-validation-lab.brittneyleighb.chatgpt.site) · [Contribute](CONTRIBUTING.md) · [Research roadmap](docs/CONTRIBUTOR_ROADMAP.md) · [Open issues](https://github.com/bit-foundry-labs/embers-kernel/issues) · [Contributor launch milestone](https://github.com/bit-foundry-labs/embers-kernel/issues/24)
 
 ## Validation Lab
 
@@ -77,13 +77,17 @@ The earlier C prototype remains accessible as [historical PR #2](https://github.
 
 For the host-only policy experiment now on `main`, run `cargo test` in `experiments/rust-policy-guard`. [PR #6](https://github.com/bit-foundry-labs/embers-kernel/pull/6) records its development. This experiment does not execute a privileged Rust kernel.
 
+## Learn by contributing
+
+New to kernels or Rust systems programming? Start with the [Embers Kernel Learning Lab](docs/learning/README.md): three short, evidence-based exercises on the boot path, memory ownership, and reviewing `unsafe` Rust. Browser-only source review is welcome; no privileged code changes or physical hardware are needed. See the [contributor test selection guide](CONTRIBUTING.md#run-the-right-checks-before-opening-a-pr) if you choose to run tests.
+
 ## Help build it
 
 We're looking for contributors interested in **Rust systems programming, kernel bring-up, x86-64/QEMU, capability security, IPC, concurrency, scheduling, model checking, and reproducible benchmarks**.
 
 A useful first contribution is a narrow, verifiable improvement, not a sweeping rewrite:
 
-- **Start here, documentation-only:** [Map the normal Rust boot path from Limine to `READY` (#89)](https://github.com/bit-foundry-labs/embers-kernel/issues/89). Trace the source and write a short, linked explanation; QEMU setup and kernel edits are not required.
+- **Documentation learning and review:** [Trace the Rust boot path (#89)](https://github.com/bit-foundry-labs/embers-kernel/issues/89). Contributor `archweave` has volunteered to lead the requested map; offer a source-linked review or coordinate on the issue instead of opening a duplicate PR.
 - **Reproducibility, already under review:** [Ubuntu/WSL QEMU reproduction (#8)](https://github.com/bit-foundry-labs/embers-kernel/issues/8) has [PR #87](https://github.com/bit-foundry-labs/embers-kernel/pull/87) open. Coordinate with the contributor before duplicating their work.
 - **Independent review:** [Review the M06 QMP integration evidence](https://github.com/bit-foundry-labs/embers-kernel/issues/84) (more advanced; no kernel changes required).
 
