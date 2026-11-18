@@ -2,6 +2,8 @@
 name: Community role interest
 about: Volunteer to review Embers Kernel, or express interest in future maintainership.
 title: "Community role interest: "
+labels: ["community-role-interest"]
+assignees: ["brittneyleighb"]
 ---
 
 Thanks for offering to help Embers Kernel. This is a **public** issue. Do not include private personal data, credentials, exploit details, or proprietary material. See [the role guide](../../docs/CONTRIBUTOR_ROLES.md) before posting.
