@@ -19,7 +19,7 @@ permissions:
 jobs:
   exceptions:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - name: Rust formatting and lints
@@ -67,15 +67,11 @@ jobs:
           done
       - name: Validate permission-fault diagnostic parser on host
         run: python3 scripts/check_permission_fault.py --self-test
-      - name: Install headless QEMU and ISO prerequisites
+      - name: Validate isolated APT mirror fallback and security preservation
+        run: python3 scripts/qemu_mirror_fallback.py --self-test
+      - name: Provision QEMU and ISO tools with mirror fallback
         shell: bash
-        run: |
-          set -euo pipefail
-          # Avoid a ten-minute hang when Ubuntu package mirrors are unreachable.
-          timeout 60s sudo apt-get update -o Acquire::Retries=0 -o Acquire::http::Timeout=12 -o Acquire::https::Timeout=12
-          timeout 90s sudo apt-get install -y -o Acquire::Retries=0 -o Acquire::http::Timeout=12 -o Acquire::https::Timeout=12 qemu-system-x86 xorriso
-          command -v qemu-system-x86_64
-          command -v xorriso
+        run: bash scripts/install_qemu_ci.sh
       - name: Boot normal kernel and inject intentional CPU faults
         shell: bash
         run: |
