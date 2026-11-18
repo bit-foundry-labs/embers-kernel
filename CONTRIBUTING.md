@@ -37,6 +37,34 @@ Maintainer appointments are **not open grants**. They require sustained technica
 
 Do not change unrelated code, disable failing tests, commit model credentials, include proprietary model weights, or add network/API spending as an undocumented dependency.
 
+## Run the right checks before opening a PR
+
+From the repository root, on Ubuntu or WSL with the pinned Rust toolchain
+installed (see [Rust kernel setup](rust-kernel/README.md)):
+
+| Change type | Start with | Additional evidence |
+| --- | --- | --- |
+| Documentation only | Review Markdown links and run `git diff --check` | GitHub Source hygiene check |
+| Rust source, formatting, or build | `make rust-check` | `cd rust-kernel && cargo fmt --all -- --check && cargo clippy --release --offline -- -D warnings` |
+| Boot memory selection | `make rust-memory-test` | M04/M05 GitHub workflow |
+| Owner ledger or reservation registry | `make rust-ledger-test` and `make rust-frame-registry-test` | M04/M05 workflow; QEMU ownership smoke for feature-gated changes |
+| Limine address metadata or boot-pool gate | `make rust-provenance-test` and `make rust-boot-pool-gate-test` | Boot and memory workflows |
+| Paging research models | `make rust-paging-research-test` and `make rust-pte-fields-test` | Relevant host fixtures and QEMU preflight when privileged code changes |
+| Serial diagnostics | `make rust-serial-test` | QEMU READY/fault serial logs if boot output changes |
+| Exception, privileged CPU, or fault-injection code | `make rust-iso` | Relevant QEMU boot/exception/permission-fault workflow |
+
+These are **starting points**, not a substitute for the full CI suite. Host
+tests run model or bookkeeping logic; QEMU exercises selected emulator paths.
+Neither establishes production hardware safety or memory isolation.
+
+**When a check fails:** include the exact command, first relevant error,
+toolchain/host environment, and whether the failure reproduces on unmodified
+`main`. Distinguish a build/test assertion failure from dependency download
+or runner setup failures. Never disable a failing test to make a PR green.
+
+**When a check cannot run:** say so in the PR. Mark it *not run*, explain the
+blocker, and link any relevant CI job. Do not report CI results as local tests.
+
 ## Professional communication and technical writing
 
 Write all contributor-facing prose in **clear, complete, grammatically correct sentences**. This standard applies to README files, architecture and research notes, issue descriptions, pull-request descriptions, review discussions, commit messages where prose is used, Rust documentation comments, and explanatory inline code comments.
