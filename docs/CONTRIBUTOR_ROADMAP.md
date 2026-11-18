@@ -10,7 +10,7 @@ This is a research sequence, not a release schedule. Work is tracked in issues a
 - [M04](https://github.com/bit-foundry-labs/embers-kernel/pull/28): Limine map validation and monotonic physical-frame claims.
 - [M05](https://github.com/bit-foundry-labs/embers-kernel/pull/29): bounded, single-writer owner ledger; quarantine cannot be recycled.
 
-**Still needed:** fresh Ubuntu/WSL reproduction by an independent contributor; tested minimum CPU feature requirements beyond `-cpu max`; separate UEFI boot coverage; full fault-state and memory-mapping safety review. See [launch-readiness issue #24](https://github.com/bit-foundry-labs/embers-kernel/issues/24). The historical C reference lives in PR #2, not the Rust build.
+**Still needed:** finish review of the independent Ubuntu reproduction ([#8](https://github.com/bit-foundry-labs/embers-kernel/issues/8), [PR #87](https://github.com/bit-foundry-labs/embers-kernel/pull/87)); separate UEFI boot coverage; full fault-state and memory-mapping safety review. [PR #51](https://github.com/bit-foundry-labs/embers-kernel/pull/51) documented tested QEMU CPU models, not minimum physical-hardware requirements. See [launch-readiness issue #24](https://github.com/bit-foundry-labs/embers-kernel/issues/24). The historical C reference lives in PR #2, not the Rust build.
 
 ## Isolation: the real microkernel
 - Persistent physical frame ownership, kernel-owned page tables, supervisor/user permission boundaries, and safe zeroing/reclamation. The M05 accounting demo does not enforce these.
@@ -32,12 +32,14 @@ This is a research sequence, not a release schedule. Work is tracked in issues a
 
 ## Available first contributions
 
-- [#8: independent Ubuntu/WSL QEMU reproduction](https://github.com/bit-foundry-labs/embers-kernel/issues/8), documentation-only.
-- [#89: map the normal Rust boot path from Limine to READY](https://github.com/bit-foundry-labs/embers-kernel/issues/89), documentation-only.
+- **Start here:** [#89: map the normal Rust boot path from Limine to `READY`](https://github.com/bit-foundry-labs/embers-kernel/issues/89), documentation-only; QEMU is not required.
+- **Already under review:** [#8: independent Ubuntu/WSL QEMU reproduction](https://github.com/bit-foundry-labs/embers-kernel/issues/8), with [PR #87](https://github.com/bit-foundry-labs/embers-kernel/pull/87) open. Coordinate before duplicating work.
 
 For more experienced reviewers, [#84: independently review M06 QMP integration evidence](https://github.com/bit-foundry-labs/embers-kernel/issues/84).
 
-Claim an issue by commenting with your intended approach and environment. Each issue has testable acceptance criteria. Do not boot on physical hardware.
+**Completed examples, not open starter tasks:** [#33 unsafe-boundary inventory](https://github.com/bit-foundry-labs/embers-kernel/issues/33) and [#9 QEMU CPU baseline](https://github.com/bit-foundry-labs/embers-kernel/issues/9).
+
+Claim an available issue by commenting with your intended approach and environment. Check its state and linked PRs first. Each issue has testable acceptance criteria. Do not boot on physical hardware.
 
 ## Definition of a good first issue
 An expected result, a bounded number of files, concrete tests, and an explicit limitation. Missing performance data is an invitation to measure, not invent numbers.
