@@ -21,18 +21,27 @@ install_packages() {
 
 if ! install_packages; then
   echo "::warning::Default Ubuntu package mirror failed; retrying using archive.ubuntu.com."
-  # GitHub-hosted Ubuntu 24.04 commonly uses a deb822 sources file with
-  # mirror+file: URIs. Only change the main Ubuntu archive, not security.
   source_file=/etc/apt/sources.list.d/ubuntu.sources
   if [[ ! -f "$source_file" ]]; then
     echo "::error::Cannot locate Ubuntu deb822 sources for mirror fallback."
     exit 1
   fi
-  sudo sed -i \
-    -e 's|mirror+file:/etc/apt/apt-mirrors.txt|http://archive.ubuntu.com/ubuntu|g' \
-    -e 's|http://[[:alnum:].-]*\.archive\.ubuntu\.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' \
-    "$source_file"
-  install_packages
+  # Edit a temporary copy first; preserve the original sources for restoration.
+  original=$(mktemp)
+  replacement=$(mktemp)
+  sudo cp "$source_file" "$original"
+  cp "$original" "$replacement"
+  trap 'rm -f "$original" "$replacement"' EXIT
+  if ! python3 scripts/qemu_mirror_fallback.py "$replacement"; then
+    echo "::error::Unsupported Ubuntu sources layout; refusing broad mirror rewrite."
+    exit 1
+  fi
+  sudo cp "$replacement" "$source_file"
+  if ! install_packages; then
+    sudo cp "$original" "$source_file"
+    echo "::error::QEMU package installation failed after bounded mirror fallback."
+    exit 1
+  fi
 fi
 
 command -v qemu-system-x86_64
