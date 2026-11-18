@@ -6,7 +6,7 @@ We're investigating what the kernel should control when applications and AI agen
 
 **This is a research effort, not a working general-purpose operating system or a benchmark-proven AI-optimized kernel.**
 
-[Validation Lab](https://embers-kernel-validation-lab.brittneyleighb.chatgpt.site) · [Contribute](CONTRIBUTING.md) · [Research roadmap](docs/CONTRIBUTOR_ROADMAP.md) · [Open issues](https://github.com/bit-foundry-labs/embers-kernel/issues) · [Contributor launch milestone](https://github.com/bit-foundry-labs/embers-kernel/issues/24)
+[Start learning](docs/learning/README.md) · [Validation Lab](https://embers-kernel-validation-lab.brittneyleighb.chatgpt.site) · [Contribute](CONTRIBUTING.md) · [Research roadmap](docs/CONTRIBUTOR_ROADMAP.md) · [Open issues](https://github.com/bit-foundry-labs/embers-kernel/issues) · [Contributor launch milestone](https://github.com/bit-foundry-labs/embers-kernel/issues/24)
 
 ## Validation Lab
 
@@ -76,6 +76,10 @@ For the four-mode exception smoke test, see [M03 exception instructions](rust-ke
 The earlier C prototype remains accessible as [historical PR #2](https://github.com/bit-foundry-labs/embers-kernel/pull/2). It is **not** required to build or execute the Rust kernel.
 
 For the host-only policy experiment, check out [PR #6](https://github.com/bit-foundry-labs/embers-kernel/pull/6) and run `cargo test` in `experiments/rust-policy-guard`. That does not execute a privileged Rust kernel.
+
+## Learn by contributing
+
+New to kernels or Rust systems programming? Start with the [Embers Kernel Learning Lab](docs/learning/README.md): three short, evidence-based exercises on the boot path, memory ownership, and reviewing `unsafe` Rust. Browser-only source review is welcome; no privileged code changes or physical hardware are needed.
 
 ## Help build it
 
