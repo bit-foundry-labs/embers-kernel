@@ -33,8 +33,9 @@ This is a research sequence, not a release schedule. Work is tracked in issues a
 ## Available first contributions
 
 - [#8: independent Ubuntu/WSL QEMU reproduction](https://github.com/bit-foundry-labs/embers-kernel/issues/8), documentation-only.
-- [#33: inventory early boot `unsafe` boundaries](https://github.com/bit-foundry-labs/embers-kernel/issues/33), documentation-only.
-- [#9: tested QEMU CPU baseline matrix](https://github.com/bit-foundry-labs/embers-kernel/issues/9), intermediate architecture/compatibility.
+- [#89: map the normal Rust boot path from Limine to READY](https://github.com/bit-foundry-labs/embers-kernel/issues/89), documentation-only.
+
+For more experienced reviewers, [#84: independently review M06 QMP integration evidence](https://github.com/bit-foundry-labs/embers-kernel/issues/84).
 
 Claim an issue by commenting with your intended approach and environment. Each issue has testable acceptance criteria. Do not boot on physical hardware.
 
