@@ -20,7 +20,7 @@ permissions:
 jobs:
   boot-matrix:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -49,15 +49,9 @@ jobs:
         run: make rust-transition-stack-test
       - name: Test read-only QMP 4 KiB walker negative paths on host
         run: make rust-active-pte-test
-      - name: Install emulator and ISO tools
+      - name: Provision QEMU and ISO tools with mirror fallback
         shell: bash
-        run: |
-          set -euo pipefail
-          # Avoid a ten-minute hang when Ubuntu package mirrors are unreachable.
-          timeout 60s sudo apt-get update -o Acquire::Retries=0 -o Acquire::http::Timeout=12 -o Acquire::https::Timeout=12
-          timeout 240s sudo apt-get install -y --no-install-recommends -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 qemu-system-x86 xorriso
-          command -v qemu-system-x86_64
-          command -v xorriso
+        run: bash scripts/install_qemu_ci.sh
       - name: Reject stale unverified Limine worktree inputs
         shell: bash
         run: |
