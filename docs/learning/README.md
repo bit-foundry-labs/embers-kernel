@@ -1,0 +1,34 @@
+# Embers Kernel Learning Lab
+
+Learn systems engineering by investigating **the real Embers source**, reproducing evidence, and contributing small, reviewable findings. This is a guided entry point, not a separate toy kernel or a certification.
+
+## Choose a starting point
+
+| Module | Prerequisites | You will produce | First contribution |
+| --- | --- | --- | --- |
+| [01 — Trace a boot](01-boot-path.md) | Read Rust functions and GitHub diffs; QEMU optional | A source-linked boot sequence with an explicit evidence boundary | [Issue #89](https://github.com/bit-foundry-labs/embers-kernel/issues/89) |
+| [02 — Who owns a frame?](02-memory-ownership.md) | Basic Rust enums and unit tests | A claim/deny/quarantine trace and one test question | A small issue or review proposal; do not assume an open coding task |
+| [03 — Review an unsafe boundary](03-unsafe-review.md) | Rust borrowing and pointer basics | A concise, evidence-linked review of one `unsafe` contract | Review a PR or propose a documentation correction |
+
+Each module uses **observe → explain → test or inspect → critique → contribute**. You can complete the read-only portions in a browser. Running the kernel is optional for the first pass, and **physical-hardware boot is not supported**.
+
+## Before contributing
+
+1. Read [CONTRIBUTING](../../CONTRIBUTING.md), the [Code of Conduct](../../CODE_OF_CONDUCT.md), and the [research roadmap](../CONTRIBUTOR_ROADMAP.md).
+2. Choose one module and follow its evidence exercise. Use the current `main` branch, since symbols and implementation details change.
+3. Check whether an issue is still open and unclaimed; comment with your intended scope before starting. For an untracked finding, discuss it before opening a large PR.
+4. State exactly what you ran. If you only inspected code, say **“source review only; tests not run.”** A CI badge is not evidence that you ran tests locally.
+5. Use the [review standard](../CODE_REVIEW_STANDARD.md) to make your finding actionable. Technical review is a valid contribution even without writing kernel code.
+
+## What Embers currently proves, and what it does not
+
+Embers has a Rust `no_std` QEMU boot and experiments in exception handling, memory-map validation, and frame accounting. Some paging and reservation work may be present or proposed; verify status on `main` and in the linked tests. **Do not infer** production hardware safety, ring-3 isolation, working IPC, or enforced capability security from a boot marker or host test.
+
+## Further reading
+
+- [Operating Systems: Three Easy Pieces](https://pages.cs.wisc.edu/~remzi/OSTEP/), Remzi and Andrea Arpaci-Dusseau. Use address spaces, virtual memory, and concurrency chapters for concepts; this is not an Embers implementation specification.
+- [Writing an OS in Rust](https://os.phil-opp.com/), Philipp Oppermann. Read the freestanding Rust, exceptions, and paging chapters for parallel examples. Its bootloader and code structure differ from Embers; **do not paste its implementation into this repository**.
+
+## Growing with the project
+
+A first contribution can be a reproducible defect report, a corrected explanation, a negative test, or an independent review. People interested in ongoing review can read [community roles](../CONTRIBUTOR_ROLES.md) and use the [community-role interest form](https://github.com/bit-foundry-labs/embers-kernel/issues/new?template=role_interest.md). Learning modules do not grant GitHub permissions or guarantee a maintainer role.
