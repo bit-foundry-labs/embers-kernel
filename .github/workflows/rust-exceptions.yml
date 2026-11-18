@@ -67,6 +67,8 @@ jobs:
           done
       - name: Validate permission-fault diagnostic parser on host
         run: python3 scripts/check_permission_fault.py --self-test
+      - name: Validate isolated APT mirror fallback and security preservation
+        run: python3 scripts/qemu_mirror_fallback.py --self-test
       - name: Provision QEMU and ISO tools with mirror fallback
         shell: bash
         run: bash scripts/install_qemu_ci.sh
