@@ -9,7 +9,7 @@ The best first contribution is small enough to explain, test, and review.
 3. Prefer one observable behavior per pull request. For security-critical APIs, start with tests and a written threat assumption.
 4. Do not claim mathematical guarantees without a precisely scoped proof, benchmark, or test.
 
-The default branch contains experimental Rust `no_std` x86-64 boot, GDT/TSS/IDT exception handling, Limine memory-map validation and symbolic frame-owner accounting (M02–M05). Follow the headless QEMU and host-test commands in [README](README.md). Those are **not** ring-3 isolation or capability enforcement. **PR #2** preserves the historical C bootstrap; **PR #3** proposes architecture, and **PR #6** is an independent host-tested policy simulation.
+The default branch contains experimental Rust `no_std` x86-64 boot, GDT/TSS/IDT exception handling, Limine memory-map validation and symbolic frame-owner accounting (M02–M05). Follow the headless QEMU and host-test commands in [README](README.md). Those are **not** ring-3 isolation or capability enforcement. **PR #2** preserves the historical C bootstrap; **PR #3** proposes architecture, and the host-tested policy experiment from **PR #6** is now on `main` in `experiments/rust-policy-guard` (not privileged kernel code).
 
 ## Choose a contribution path
 
@@ -30,12 +30,20 @@ Maintainer appointments are **not open grants**. They require sustained technica
 ## Practical workflow
 
 1. Start with an [open issue](https://github.com/bit-foundry-labs/embers-kernel/issues), ideally one with a reproducible expected result. Fork the repository, create a feature branch, and reference the issue.
-2. Reproduce the Rust kernel baseline from `main` using `make rust-iso`, headless QEMU and the applicable `make rust-memory-test` / `make rust-ledger-test` commands. For fault work, see `rust-kernel/M03_EXCEPTIONS.md`. The C bootstrap in PR #2 is historical reference code; the policy model in PR #6 remains a separate branch.
+2. Reproduce the Rust kernel baseline from `main` using `make rust-iso`, headless QEMU and the applicable `make rust-memory-test` / `make rust-ledger-test` commands. For fault work, see `rust-kernel/M03_EXCEPTIONS.md`. The C bootstrap in PR #2 is historical reference code; the host-only policy experiment from PR #6 is now on `main`.
 3. Implement one scoped change. Add or update tests and concise documentation.
 4. Open a pull request with: problem, approach, limitations, tests run, QEMU log if relevant, and any security impact.
 5. Keep communication respectful. Maintainers may request revisions, defer work, or reject incompatible designs.
 
 Do not change unrelated code, disable failing tests, commit model credentials, include proprietary model weights, or add network/API spending as an undocumented dependency.
+
+## Your first pull request: a short walkthrough
+
+1. **Pick an open, bounded task.** Start with [#89 (boot-path map)](https://github.com/bit-foundry-labs/embers-kernel/issues/89): trace the existing Rust boot path and draft a short, source-linked explanation without running QEMU. [Issue #8](https://github.com/bit-foundry-labs/embers-kernel/issues/8) already has [PR #87](https://github.com/bit-foundry-labs/embers-kernel/pull/87) under review; offer independent verification rather than duplicating that contribution. Comment on your selected issue before starting.
+2. **Fork and branch from current `main`.** Follow the [README setup and headless QEMU instructions](README.md#boot-embers-in-headless-qemu) if your task requires execution. Do not run the kernel on physical hardware.
+3. **Make one reviewable change.** For #89, add only the requested boot-path documentation; link the actual functions and distinguish observed QEMU behavior from unimplemented isolation. Avoid unrelated refactoring.
+4. **Report evidence precisely.** Run relevant commands if your environment supports them, recording commands and results. Otherwise write **“Documentation-only; tests not run.”** Never imply that CI, QEMU, or hardware tests ran locally when they did not.
+5. **Open the PR and respond to review.** Link the issue, summarize the change and limitations, complete the PR template, and address reviewer feedback on the same branch. Maintainers verify required CI and decide whether to merge.
 
 ## Professional communication and technical writing
 
