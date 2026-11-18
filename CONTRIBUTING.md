@@ -45,6 +45,36 @@ Do not change unrelated code, disable failing tests, commit model credentials, i
 4. **Report evidence precisely.** Run relevant commands if your environment supports them, recording commands and results. Otherwise write **“Documentation-only; tests not run.”** Never imply that CI, QEMU, or hardware tests ran locally when they did not.
 5. **Open the PR and respond to review.** Link the issue, summarize the change and limitations, complete the PR template, and address reviewer feedback on the same branch. Maintainers verify required CI and decide whether to merge.
 
+## Run the right checks before opening a PR
+
+From the repository root, on Ubuntu or WSL with the pinned Rust toolchain
+installed (see [Rust kernel setup](rust-kernel/README.md)). Host-only tests do not require QEMU or an ISO; boot/exception tests also require QEMU, `xorriso`, and the toolchain prerequisites documented in the setup guide:
+
+| Change type | Start with | Additional evidence |
+| --- | --- | --- |
+| Documentation only | Review Markdown links and run `git diff --check` | GitHub Source hygiene check |
+| Rust source, formatting, or build | `make rust-check` | `cd rust-kernel && cargo fmt --all -- --check && cargo clippy --release --offline -- -D warnings` |
+| Boot memory selection | `make rust-memory-test` | [M04/M05 memory workflow](.github/workflows/rust-memory.yml) |
+| Owner ledger or reservation registry | `make rust-ledger-test` and `make rust-frame-registry-test` | [M04/M05 memory workflow](.github/workflows/rust-memory.yml); QEMU ownership smoke for feature-gated changes |
+| Limine address metadata or boot-pool gate | `make rust-provenance-test` and `make rust-boot-pool-gate-test` | [Rust boot](.github/workflows/rust-boot.yml) and [M04 memory](.github/workflows/rust-memory.yml) workflows |
+| Paging research models | `make rust-paging-research-test` and `make rust-pte-fields-test` | [M04 memory host fixtures](.github/workflows/rust-memory.yml) and [Rust boot QEMU preflight](.github/workflows/rust-boot.yml) when privileged code changes |
+| Serial diagnostics | `make rust-serial-test` | QEMU READY/fault serial logs if boot output changes |
+| Exception, privileged CPU, or fault-injection code | `make rust-iso` | [Rust boot](.github/workflows/rust-boot.yml) and [M03 exceptions](.github/workflows/rust-exceptions.yml) workflows |
+
+These are **starting points**, not a substitute for the full CI suite. Host
+tests run model or bookkeeping logic; QEMU exercises selected emulator paths.
+Neither establishes production hardware safety or memory isolation.
+
+**Example:** If you change `rust-kernel/src/frame_registry.rs`, start with `make rust-frame-registry-test`; the M04 workflow also exercises frame-registry host tests and QEMU memory diagnostics. If you did not run QEMU locally, report that explicitly rather than presenting CI results as your own.
+
+**When a check fails:** include the exact command, first relevant error,
+toolchain/host environment, and whether the failure reproduces on unmodified
+`main`. Distinguish a build/test assertion failure from dependency download
+or runner setup failures. Never disable a failing test to make a PR green.
+
+**When a check cannot run:** say so in the PR. Mark it *not run*, explain the
+blocker, and link any relevant CI job. Do not report CI results as local tests.
+
 ## Professional communication and technical writing
 
 Write all contributor-facing prose in **clear, complete, grammatically correct sentences**. This standard applies to README files, architecture and research notes, issue descriptions, pull-request descriptions, review discussions, commit messages where prose is used, Rust documentation comments, and explanatory inline code comments.
