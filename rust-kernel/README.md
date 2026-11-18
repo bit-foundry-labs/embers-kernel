@@ -8,6 +8,36 @@ The former C bootstrap lives in the historical research branch PR #2.
 The Rust build reuses a linker script and checksum-pinned Limine ISO
 packaging machinery, but neither compiles nor links the C kernel.
 
+## Source and test map for contributors
+
+The executable is [`src/main.rs`](src/main.rs). The modules below are
+organized by responsibility rather than by milestone number. Start with a
+host-only test when changing pure bookkeeping; use QEMU when changing boot,
+privileged CPU state, or hardware-visible behavior.
+
+| Responsibility | Source | Where to start testing |
+| --- | --- | --- |
+| Entry, diagnostics, and serial output | [`main.rs`](src/main.rs), [`serial.rs`](src/serial.rs) | `make rust-check`; QEMU READY workflow |
+| Exception descriptors and fault entry | [`arch.rs`](src/arch.rs) | M03 exception QEMU workflow |
+| Limine memory map and frame selection | [`boot_memory.rs`](src/boot_memory.rs), [`memory.rs`](src/memory.rs) | `make rust-memory-test` |
+| Symbolic owner ledger | [`frame_ledger.rs`](src/frame_ledger.rs) (feature-gated) | `make rust-ledger-test`; ownership smoke |
+| Frame reservation registry and state | [`frame_registry.rs`](src/frame_registry.rs), [`kernel_state.rs`](src/kernel_state.rs) | `make rust-frame-registry-test` |
+| Boot address provenance and one-time pool gate | [`boot_addresses.rs`](src/boot_addresses.rs), [`address_provenance.rs`](src/address_provenance.rs), [`boot_pool_gate.rs`](src/boot_pool_gate.rs) | `make rust-provenance-test`; `make rust-boot-pool-gate-test` |
+| Paging and CPU protection observations | [`paging_mode.rs`](src/paging_mode.rs), [`research/`](research/) | `make rust-paging-research-test`; `make rust-pte-fields-test`; QEMU preflight |
+| Deliberate permission faults | [`permission_fault.rs`](src/permission_fault.rs) (feature-gated) | QEMU fault-mode workflows |
+| Experimental inherited-stack probe | [`transition_stack.rs`](src/transition_stack.rs) (feature-gated) | QEMU transition-stack smoke |
+
+Host tests live in [`tests/`](tests/) and in module-local `#[cfg(test)]`
+sections. The [`research/`](research/) directory contains numerical
+page-table models; it does not implement a live page-table writer. Use
+[`UNSAFE_BOUNDARIES.md`](UNSAFE_BOUNDARIES.md) for privileged-code
+preconditions, and consult the [milestone notes](M06E_TRANSACTIONAL_RESERVATIONS.md)
+for the distinction between validated bookkeeping and enforced isolation.
+
+**Review rule:** A host test of a model cannot substitute for QEMU evidence
+when a change touches a hardware trust boundary. Conversely, a QEMU READY
+marker does not prove memory isolation or safety on physical hardware.
+
 ## Fresh Ubuntu/WSL reproduction
 
 Install rustup from https://rustup.rs and system prerequisites:
