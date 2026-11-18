@@ -1,6 +1,6 @@
 # Unsafe boundaries in the early Rust kernel
 
-**Audit scope:** Early Rust boot, memory, paging-state, QEMU-only permission faults and experimental stack paths. The previous detailed source audit was anchored to `ab5fe78b8c430e6c8e9a990542994a775c21963e` (through merged #77). A subsequent read-only spot-check of current `main` reviewed the unsafe sites in `main.rs`, `arch.rs`, `boot_memory.rs`, `boot_addresses.rs`, `paging_mode.rs`, and `transition_stack.rs`; it did not independently rerun builds or prove every site safe. Recheck this inventory whenever feature gates or the privileged boot boundary changes.
+**Audit scope:** This source-level inventory covers early Rust boot, memory, paging-state observations, QEMU-only permission faults, and experimental stack paths. Its original detailed audit was anchored to `ab5fe78b8c430e6c8e9a990542994a775c21963e` (through merged #77). For this update, the stated assumptions were compared with `main` at `59ceb3f00bd36726b04b335086913e0bfb444428` in `main.rs`, `arch.rs`, `boot_memory.rs`, `boot_addresses.rs`, `paging_mode.rs`, `transition_stack.rs`, and the feature-gated fault paths. This bounded source inspection does not establish a comprehensive re-audit, independently rerun tests, or prove those unsafe operations safe. Recheck this snapshot whenever the privileged boot boundary changes.
 
 **Status:** Source-level inventory, not formal verification or proof that external pointers and hardware state are safe. The companion host-only PTE field tests are pure numerical models; no privileged code or page tables are changed. Follow the function names rather than line numbers.
 
@@ -42,7 +42,7 @@ The current execution model is one bootstrap CPU (BSP), CPL0, interrupts disable
 ## Review findings for future work
 
 - **Bootloader pointer provenance remains a trust assumption.** Null and count checks are useful but do not make arbitrary nonnull pointers safe to dereference. The current boot path assumes a correctly behaving Limine handoff; any future hostile-input boundary requires a separate design and validation strategy.
-- **Privileged descriptor setup is BSP-only.** `arch.rs::install` writes shared static GDT/TSS/IDT state under an exclusive early-boot assumption. Enabling SMP or interrupts requires a new synchronization and per-CPU design review, not simply removing `unsafe` keywords.
+- **Privileged descriptor setup is BSP-only.** `arch.rs::install` initializes shared static GDT/TSS/IDT state under an exclusive early-boot assumption. Enabling SMP requires per-CPU ownership and concurrent initialization review; enabling interrupts, even on one CPU, requires reentrancy and initialization-order analysis. Neither transition is made safe simply by removing `unsafe` keywords.
 - **CPU feature and paging-state sampling is observational.** Read-only control-register/MSR operations do not establish effective mapping permissions, DMA isolation, or page-table ownership.
 - **Fault injection must remain feature-gated.** Exception and permission tests intentionally crash disposable QEMU guests and must not be mistaken for normal boot or production recovery behavior.
 
@@ -80,7 +80,7 @@ make rust-pte-fields-test
 make rust-iso
 ```
 
-The repository's M02, M03 and M04/M05 GitHub Actions workflows additionally run QEMU normal/fault/ownership-smoke checks. This inventory update is based on source inspection only; **no local Rust build or emulator result is claimed**. Evaluate the PR checks independently, and do not treat passing CI as exhaustive proof.
+The repository's M02, M03 and M04/M05 GitHub Actions workflows additionally run QEMU normal/fault/ownership-smoke checks. This documentation change is based on source inspection; **no local Rust build or emulator result is claimed for this update**. Evaluate the PR checks independently, and do not treat passing CI as exhaustive proof.
 
 ## Review triggers
 
