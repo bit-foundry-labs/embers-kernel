@@ -37,6 +37,14 @@ Maintainer appointments are **not open grants**. They require sustained technica
 
 Do not change unrelated code, disable failing tests, commit model credentials, include proprietary model weights, or add network/API spending as an undocumented dependency.
 
+## Your first pull request: a short walkthrough
+
+1. **Pick an open, bounded task.** Start with [#89 (boot-path map)](https://github.com/bit-foundry-labs/embers-kernel/issues/89) or [#8 (Ubuntu/WSL reproduction)](https://github.com/bit-foundry-labs/embers-kernel/issues/8). Comment with your intended approach and environment, and check whether someone has already claimed it.
+2. **Fork and branch from current `main`.** Follow the [README setup and headless QEMU instructions](README.md#boot-embers-in-headless-qemu) if your task requires execution. Do not run the kernel on physical hardware.
+3. **Make one reviewable change.** For #89, add only the requested boot-path documentation; link the actual functions and distinguish observed QEMU behavior from unimplemented isolation. Avoid unrelated refactoring.
+4. **Report evidence precisely.** Run relevant commands if your environment supports them, recording commands and results. Otherwise write **“Documentation-only; tests not run.”** Never imply that CI, QEMU, or hardware tests ran locally when they did not.
+5. **Open the PR and respond to review.** Link the issue, summarize the change and limitations, complete the PR template, and address reviewer feedback on the same branch. Maintainers verify required CI and decide whether to merge.
+
 ## Professional communication and technical writing
 
 Write all contributor-facing prose in **clear, complete, grammatically correct sentences**. This standard applies to README files, architecture and research notes, issue descriptions, pull-request descriptions, review discussions, commit messages where prose is used, Rust documentation comments, and explanatory inline code comments.
