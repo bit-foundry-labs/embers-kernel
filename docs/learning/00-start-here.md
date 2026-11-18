@@ -1,6 +1,6 @@
 # 00 — Your first 15 minutes with Embers Kernel
 
-**No installation, terminal, account signup, or pull request required.** Use a browser to read a few lines of Rust and explain what they demonstrate. You can stop after the self-check; sharing your notes is optional.
+**No installation, terminal, account signup, or pull request required.** This is a suggested 15-minute route, not a measured completion time. One source observation is enough to finish the beginner checkpoint; you can explore the other functions if you have more time. Sharing notes is optional.
 
 ## 0–3 minutes: What are we looking at?
 
@@ -10,17 +10,24 @@ Right now, Embers can boot a small Rust `no_std` program under the **QEMU emulat
 
 If you meet an unfamiliar word, use the [plain-language glossary](glossary.md); you do not need to memorize it first.
 
-## 3–8 minutes: Follow just three functions
+## 3–8 minutes: Find your first function
 
-Open [`rust-kernel/src/main.rs`](../../rust-kernel/src/main.rs) in a new browser tab. Use GitHub's file search or your browser's Find command to locate each function **by name**, not line number.
+Open [`rust-kernel/src/main.rs`](../../rust-kernel/src/main.rs) in another browser tab. This is a long file; you only need a few lines. On a computer, press **Ctrl+F** (or **Cmd+F** on a Mac). On a phone, use your browser's **Find in page** option. Search for `fn kernel_entry`; `fn` means “function” in Rust. GitHub's file search may also work, but searching within this page is the most direct option.
 
-1. **`kernel_entry()`**: This is the Rust entry point after Limine hands off. Find the first two calls, `serial_init()` and `serial_write(...)`. In ordinary words, what can the kernel attempt to tell us at this stage?
-2. **`check_boot_memory()`**: Called later from `kernel_entry()`. Notice that it handles errors while establishing a bounded reservation of physical-frame **address numbers**. Why might the code stop instead of continuing after invalid boot data?
-3. **`run_kernel()`**: Find the normal-path `READY: Embers Rust no_std entry reached.` message and the subsequent `halt_forever()`. The READY message is conditional: feature-gated fault experiments may stop earlier instead.
+1. Find **`kernel_entry()`**, the Rust entry point after Limine hands off.
+2. Look at its first two calls: `serial_init()` and `serial_write(...)`. What message is the kernel *trying* to send?
+3. **First success:** Write one sentence: “Before checking the bootloader revision, the kernel initializes serial output and attempts to print an `EMBERS:` message.” Compare it with the source; that's already a complete observation.
 
-**Your evidence:** link to the function or quote a short identifier you located. Do not claim to have run the kernel; this is a source trace.
+You can stop here and move to the self-check. **You do not need to understand the rest of the file to succeed.**
 
-## 8–12 minutes: Make one testable claim
+### Optional: Follow two more functions
+
+- Search for `fn check_boot_memory`. It is called later from `kernel_entry()`. Find the branch for `BootMapError::NoResponse`: **What does the kernel do if the bootloader's memory-map response is missing?** (It prints an error and halts.) The [glossary](glossary.md) can explain physical frames and reservations afterward.
+- Search for `fn run_kernel`. On the normal path it prints `READY: Embers Rust no_std entry reached.` and calls `halt_forever()`. Feature-gated fault experiments may stop earlier.
+
+**Your evidence:** link to a function or quote the short identifier you found. You inspected source, not a running kernel. Do not claim to have executed tests.
+
+## 8–12 minutes: Explain what you found (optional deeper step)
 
 Complete these three sentences, in your own words:
 
@@ -52,7 +59,7 @@ No. The early bookkeeping tracks physical address numbers; it does not replace L
 You inspected source code in a browser. Write **“Source review only; tests not run.”** You have not personally executed QEMU, the host tests, or the privileged kernel.
 </details>
 
-**You're done when** you can identify those three functions, explain the READY marker without overstating its meaning, and name one limit of your evidence. This is a complete learning activity without a contribution.
+**Beginner checkpoint:** You're done when you find `kernel_entry()`, describe what its first two calls attempt to do, and explain that reading source is not the same as running QEMU. **Deeper checkpoint (optional):** Locate `check_boot_memory()` and `run_kernel()`, explain READY without overstating its meaning, and identify one limitation of the evidence. Neither requires a contribution.
 
 ## Where next?
 

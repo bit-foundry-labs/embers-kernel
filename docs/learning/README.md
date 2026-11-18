@@ -4,7 +4,7 @@ Learn systems engineering by investigating **the real Embers source**, reproduci
 
 ## Start here if you're new
 
-**[Your first 15 minutes](00-start-here.md)** is a complete browser-only exercise. Open three real Rust functions, make one evidence-backed claim, and check your explanation. No tools to install, no pull request to submit. Keep the [plain-language glossary](glossary.md) nearby when terminology gets unfamiliar.
+**[Your first 15 minutes](00-start-here.md)** is a browser-only introduction with an immediate win: find one Rust function and explain its first two calls. Explore two more functions if you wish, then check your reasoning. The time is a suggested target, not a tested guarantee. No tools to install, no pull request to submit. Keep the [plain-language glossary](glossary.md) nearby when terminology gets unfamiliar.
 
 Completing an exercise is enough; contributing is a separate, optional next step.
 
@@ -12,7 +12,7 @@ Completing an exercise is enough; contributing is a separate, optional next step
 
 | Module | Prerequisites | You will produce | First contribution |
 | --- | --- | --- | --- |
-| [00 — First 15 minutes](00-start-here.md) | Browser only; no Rust required | A three-function source trace and one correctly bounded claim | None required; learning is a complete outcome |
+| [00 — First 15 minutes](00-start-here.md) | Browser only; no Rust required | One source observation; two optional deeper traces | None required; learning is a complete outcome |
 | [01 — Trace a boot](01-boot-path.md) | Read Rust functions and GitHub diffs; QEMU optional | A source-linked boot sequence with an explicit evidence boundary | [Issue #89](https://github.com/bit-foundry-labs/embers-kernel/issues/89): `archweave` has volunteered; coordinate or offer review |
 | [02 — Who owns a frame?](02-memory-ownership.md) | Basic Rust enums and unit tests | A claim/deny/quarantine trace and one test question | A small issue or review proposal; do not assume an open coding task |
 | [03 — Review an unsafe boundary](03-unsafe-review.md) | Rust borrowing and pointer basics | A concise, evidence-linked review of one `unsafe` contract | Review a PR or propose a documentation correction |
