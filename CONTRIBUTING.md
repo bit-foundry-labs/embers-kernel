@@ -2,6 +2,8 @@
 
 The best first contribution is small enough to explain, test, and review.
 
+New to kernel engineering? The [Learning Lab](docs/learning/README.md) provides three hands-on, source-linked exercises before a first issue or review. You can begin with browser-only investigation and clearly report what you did or did not test.
+
 ## Before starting
 
 1. Read [the README](README.md), [project roadmap](docs/CONTRIBUTOR_ROADMAP.md), and [Code of Conduct](CODE_OF_CONDUCT.md).
