@@ -11,6 +11,12 @@ The best first contribution is small enough to explain, test, and review.
 
 The default branch contains experimental Rust `no_std` x86-64 boot, GDT/TSS/IDT exception handling, Limine memory-map validation and symbolic frame-owner accounting (M02–M05). Follow the headless QEMU and host-test commands in [README](README.md). Those are **not** ring-3 isolation or capability enforcement. **PR #2** preserves the historical C bootstrap; **PR #3** proposes architecture, and **PR #6** is an independent host-tested policy simulation.
 
+## Your first hour with Embers
+
+A useful starting point is [#89: document the normal Rust boot path](https://github.com/bit-foundry-labs/embers-kernel/issues/89). Read the current baseline and `rust-kernel/src/main.rs`, trace how Limine hands off to `kernel_entry()` and how the normal path reaches `READY`, then propose a short, source-linked map. You can do this without running QEMU or editing kernel code. The issue explains the acceptance criteria and how to claim it.
+
+If you prefer testing, [#8: Ubuntu/WSL reproduction](https://github.com/bit-foundry-labs/embers-kernel/issues/8) already has [PR #87](https://github.com/bit-foundry-labs/embers-kernel/pull/87) under review; coordinate before duplicating it. Experienced reviewers can tackle [#84: M06 paging observations](https://github.com/bit-foundry-labs/embers-kernel/issues/84). Check that an issue is still open and unclaimed before beginning.
+
 ## Choose a contribution path
 
 - **Documentation and research:** Fix reproducibility gaps, clarify hardware assumptions, check technical references, improve the contributor experience.
