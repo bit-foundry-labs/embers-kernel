@@ -11,12 +11,12 @@ install_packages() {
   timeout 120s sudo apt-get update \
     -o Acquire::Retries=2 \
     -o Acquire::http::Timeout=25 \
-    -o Acquire::https::Timeout=25
+    -o Acquire::https::Timeout=25 || return 1
   timeout 420s sudo apt-get install -y --no-install-recommends \
     -o Acquire::Retries=2 \
     -o Acquire::http::Timeout=25 \
     -o Acquire::https::Timeout=25 \
-    qemu-system-x86 xorriso
+    qemu-system-x86 xorriso || return 1
 }
 
 if ! install_packages; then
