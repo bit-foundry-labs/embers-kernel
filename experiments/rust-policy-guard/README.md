@@ -25,3 +25,34 @@ The policy-gate and admission properties are also checked exhaustively over fixe
 Next: scheduler runtime fairness, capability handle generations, IPC, fault injection, and formal property harnesses.
 
 Related: [ADR-0003](../../docs/adr/0003-ai-policy-validation-and-admission.md) in the research PR #3.
+
+## Delegation and budget attenuation (host-test-only)
+
+The test-only `src/delegation_research.rs` models a finite table of grants. It is
+included using `#[cfg(test)]`, so it is **not part of the policy-guard library
+compiled for normal use**, much less the privileged kernel. Run the existing
+`cargo test` and `cargo clippy --all-targets -- -D warnings` in this directory.
+
+In this deliberately small model, only the table issues child grants. A parent
+must possess `DELEGATE`; a child's `CPU`, `MEMORY`, and `DELEGATE` rights
+must be a subset of its parent's rights. CPU-tick and page-count budgets
+are transferred out of the same *remaining* balance used by the parent's own
+modeled charges. This prevents overallocating through multiple children or
+charging the parent's full budget after delegation. Invalid child owners,
+unknown rights bits, resource/right mismatches, empty grants, full tables,
+and over-budget requests are rejected without changing either grant record.
+Tests include an exhaustive **small** two-child budget matrix, not all u16
+values or arbitrary depth.
+
+**Important unimplemented boundaries:** Owner numbers are forged directly by
+host tests, and table slots are plain identifiers, not protected handles.
+There is no process-derived identity, generations, concurrent mutation,
+revocation, draining, device quiescence, actual scheduler admission, physical
+frame assignment, or authority-revocation proof. No budgets are refunded or
+reused. The model exercises local accounting policy only. Integrating it as a
+real `CapTable` would be unsafe without those mechanisms, independently
+reviewed contracts, and hardware-isolation evidence.
+
+The distinct [finite-state revocation model](../../research/formal/revocation/README.md)
+explores admission/revocation order and quiescence assumptions; neither
+experiment establishes kernel capability enforcement. See also [issue #14](https://github.com/bit-foundry-labs/embers-kernel/issues/14).
