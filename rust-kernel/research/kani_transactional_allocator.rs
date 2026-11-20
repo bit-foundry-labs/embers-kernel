@@ -94,10 +94,15 @@ mod verification {
         kani::assume(owner >= 1 && owner <= 2);
 
         let record = frames.reserve(u64::from(pages), u32::from(owner)).unwrap();
+        // Show the largest admitted run and second owner are reachable.
+        kani::cover!(record.pages == 6 && record.owner == 2);
 
         assert_eq!(initial, initial_reservation());
         assert_eq!(remaining_before, POOL_PAGES - initial.pages);
-        assert_eq!(frames.remaining_pages(), remaining_before - u64::from(pages));
+        assert_eq!(
+            frames.remaining_pages(),
+            remaining_before - u64::from(pages)
+        );
         assert_eq!(record.start, BASE + initial.pages * PAGE_BYTES);
         assert_eq!(record.pages, u64::from(pages));
         assert_eq!(record.owner, u32::from(owner));
@@ -117,6 +122,10 @@ mod verification {
         kani::assume(pages >= 1 && pages <= 6);
 
         let result = frames.reserve(u64::from(pages), 2);
+        kani::cover!(matches!(
+            result,
+            Err(TransactionError::Registry(RegistryError::CapacityExhausted))
+        ));
         assert_eq!(
             result,
             Err(TransactionError::Registry(RegistryError::CapacityExhausted))
