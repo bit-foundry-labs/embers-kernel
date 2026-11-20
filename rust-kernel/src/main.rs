@@ -240,6 +240,12 @@ pub extern "C" fn kernel_entry() -> ! {
 }
 
 fn run_kernel(state: kernel_state::KernelState<16>) -> ! {
+    // Preserve a kernel-owned copy of the Limine classifications past
+    // check_boot_memory(). These entries are metadata, not access tokens.
+    if state.boot_regions().is_empty() {
+        serial_write("ERROR: boot memory map not retained after initialization\n");
+        halt_forever();
+    }
     if state.reservation(0).is_none() {
         serial_write("ERROR: boot reservation missing after initialization\n");
         halt_forever();
