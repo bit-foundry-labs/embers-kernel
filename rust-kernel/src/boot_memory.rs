@@ -100,7 +100,7 @@ pub fn initial_frame_pool() -> Result<BootPoolSelection, BootMapError> {
     // them. We never keep references into bootloader-owned response memory.
     let pool = select_boot_pool(permit, &regions[..count], REQUIRED_BOOT_PAGES)
         .map_err(BootMapError::InvalidMap)?;
-    let map = BootMapSnapshot::from_copied_entries(regions, count)
-        .ok_or(BootMapError::InvalidCount)?;
+    let map =
+        BootMapSnapshot::from_copied_entries(regions, count).ok_or(BootMapError::InvalidCount)?;
     Ok(BootPoolSelection { pool, map })
 }
