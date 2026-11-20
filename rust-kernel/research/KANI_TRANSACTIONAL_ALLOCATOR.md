@@ -48,6 +48,18 @@ Before recording a proof result, inspect the exact-head Kani output for each nam
 
 If the one-shot boot-permit path is unsupported by Kani, report that as a tool-compatibility limitation; do **not** use a fake boot permit or silently replace the production allocator with a model merely to obtain green results.
 
+## Negative-control experiment: can Kani detect a broken transaction?
+
+The separate [`kani_transactional_negative_control.py`](kani_transactional_negative_control.py) script copies the **real production** `memory.rs` and `frame_registry.rs` plus the unmodified proof harness into a freshly created OS temporary directory. It makes exactly one deliberate mutation **in that temporary copy only**: the pool advances before registry owner/capacity validation. A rejected owner request can therefore consume frames, contradicting the rejection-atomicity invariant.
+
+The dedicated Kani job verifies the positive, unmodified proofs first and then invokes the script. **Expected negative-control result:** the `rejection_preserves_pool_and_every_exposed_slot` harness fails a Kani assertion, Kani returns a nonzero status, and the script treats that expected failure as **negative-control success**. It rejects an ordinary compilation error, tool crash, or green Kani proof as invalid evidence. All original files remain untouched. The script fails closed if the exact production transaction body changes and the intentional mutation can no longer be applied uniquely.
+
+```bash
+python3 rust-kernel/research/kani_transactional_negative_control.py
+```
+
+This tests **sensitivity to one representative failure-atomicity bug**. It is not mutation coverage for every kernel path, a validation of the compiler, a second independent proof, or assurance about real memory ownership. Reviewers should inspect the exact Kani failed assertion and commit before claiming the negative control succeeded.
+
 ## Research gates and follow-on decisions
 
 1. Only claim bounded allocator properties if all four exact-head harnesses pass with their intended coverage.
