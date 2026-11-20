@@ -56,3 +56,30 @@ reviewed contracts, and hardware-isolation evidence.
 The distinct [finite-state revocation model](../../research/formal/revocation/README.md)
 explores admission/revocation order and quiescence assumptions; neither
 experiment establishes kernel capability enforcement. See also [issue #14](https://github.com/bit-foundry-labs/embers-kernel/issues/14).
+
+## Generation-tagged handles and delegation interleavings (stacked research)
+
+The `delegation_research/interleavings.rs` tests extend the **test-only**
+delegation model introduced in draft PR #112. A `Handle` contains a slot and
+generation; reusing a test-fixture slot increments its generation, so the old
+handle fails validation. A separate parent version increments on successful
+delegation and test-fixture retirement. Two requests may observe the same
+parent version, but the modeled serialized commit rechecks the current
+version, owner, generation and budget **before** changing the table. A rejected
+stale observation leaves all records unchanged. Exhaustive small interleavings
+cover both commit orders and a fresh retry for request sizes 1..=8. Checked
+counter exhaustion denies operations without wraparound or partial state
+changes. Test with `cargo test` in this directory.
+
+**Boundary conditions:** This is sequential exploration of two stale
+observations, **not** threads racing on a real protected table. The modeled
+commit is atomic by assumption and has no lock/linearization implementation.
+Caller IDs, observations and generations are forgeable inside the host test;
+handles are **not secrets or authenticated capabilities**. The test-only
+retirement helper assumes all in-flight uses already ended and provides
+neither logical revocation nor hardware/device quiescence. It never refunds
+transferred CPU/page budgets. No CPU scheduler, process identity, generational
+reuse guarantee under concurrency, DMA/IOMMU, privileged operations or kernel
+capability enforcement is implemented here. Formal review must independently
+examine that the future production synchronization and lifetime protocols
+actually enforce these assumptions.
