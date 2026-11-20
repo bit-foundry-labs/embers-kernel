@@ -47,7 +47,7 @@ marker does not prove memory isolation or safety on physical hardware.
 Install rustup from https://rustup.rs and system prerequisites:
 
     sudo apt-get update
-    sudo apt-get install -y make binutils python3 qemu-system-x86 xorriso curl tar
+    sudo apt-get install -y make binutils gcc libc6-dev python3 qemu-system-x86 xorriso curl tar
     cd rust-kernel
     rustup toolchain install 1.90.0 --component clippy,rustfmt --target x86_64-unknown-none
     cd ..
@@ -64,6 +64,75 @@ Expected serial marker:
 
 The kernel intentionally stops with interrupts disabled in a halt loop.
 Stop QEMU with Ctrl+C.
+
+`gcc` and `libc6-dev` are required even though the kernel itself links
+without them: the host tests link through the system `cc`, and
+`make rust-iso` compiles the Limine `limine` utility from C. GitHub-hosted
+Ubuntu runners preinstall a C toolchain, so CI does not detect its absence.
+In a clean `ubuntu:26.04` container, the package list without them let
+`make rust-check` pass, but `make rust-memory-test`, `make rust-ledger-test`
+and `make rust-iso` failed with ``linker `cc` not found``. Adding only `gcc`
+still failed, because `Scrt1.o`, `crti.o`, `libutil` and `stdio.h` come from
+`libc6-dev`.
+
+If rustup is installed with Homebrew instead of https://rustup.rs, the formula
+is keg-only. Add `$(brew --prefix rustup)/bin` to `PATH` so that `cargo` and
+`rustc` resolve to the rustup proxies that honor `rust-toolchain.toml`.
+
+## Ubuntu 26.04 reproduction record (issue #8)
+
+This record is **emulator-only** evidence. The clean-environment check ran
+the commands above in a fresh `ubuntu:26.04` container (image digest
+`sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db`)
+with rustup from https://rustup.rs. With the updated package list, every
+command below passed, and QEMU (software emulation, `-cpu max`) reached
+`READY` with no `ERROR:` line. The table records a workstation run, where
+Rust was not installed beforehand.
+
+- Host OS: Ubuntu 26.04.1 LTS, x86_64
+- QEMU: `QEMU emulator version 10.2.1 (Debian 1:10.2.1+ds-1ubuntu3.2)` (apt)
+- Rust: `rustc 1.90.0 (1159e78c4 2025-09-14)` and
+  `cargo 1.90.0 (840b83a10 2025-07-30)` via Homebrew rustup and
+  `rust-toolchain.toml`; xorriso `1.5.8.pl02` via Homebrew
+- Build commit: `db9850c23713453d2ebd450b8e910f7b51a78558`
+
+| Command | Result |
+| --- | --- |
+| `make rust-check` | Passed |
+| `make rust-memory-test` | Passed: 16 tests |
+| `make rust-ledger-test` | Passed: 26 tests |
+| `make rust-iso` | Passed; Limine v12.9.6 SHA-256 verified |
+| Headless QEMU, `-cpu max` and `-cpu qemu64` | `READY` reached; no `ERROR:` line |
+| Ctrl+C with `-serial stdio` | QEMU reported `terminating on signal 2` and exited with status `0` |
+
+Serial output from the workstation run with `-cpu qemu64` follows. It is
+reproduced in full; it contains no host-specific information.
+
+    EMBERS: Rust no_std / x86_64 / boot M02
+    BOOT: Limine base revision accepted
+    BOOT: x86-64 GDT/TSS/IDT installed
+    PAGING: active four-level mode validated
+    PAGING: inherited CR3 raw = 0x000000000ff9c000
+    PAGING: root frame candidate = 0x000000000ff9c000
+    PAGING: observed BSP RSP = 0xffff80000ff94d90
+    PAGING: MAXPHYADDR bits = 0x0000000000000028
+    PAGING: maximum linear bits = 0x0000000000000030
+    PAGING: CPU protection controls active (CR0.WP, EFER.NXE, EFER.LMA)
+    ADDRESS: Limine HHDM and executable bases validated
+    ADDRESS: HHDM offset = 0xffff800000000000
+    ADDRESS: executable physical base = 0x000000000ff42000
+    ADDRESS: executable virtual base = 0xffffffff80000000
+    MEMORY: validated Limine map for physical frame accounting
+    MEMORY: frame claim 1 = 0x0000000000100000
+    MEMORY: frame claim 2 = 0x0000000000101000
+    MEMORY: remaining pages in selected span = 0x000000000000fe3c
+    MEMORY: boot reservation retained after initialization
+    READY: Embers Rust no_std entry reached.
+
+The `-cpu max` log is identical except for one line,
+`PAGING: maximum linear bits = 0x0000000000000039`, because that model
+reports 57-bit linear addresses. The kernel still validates four-level
+paging before `READY`.
 
 ## M02 tested QEMU CPU baseline (issue #9)
 
