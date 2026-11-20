@@ -78,6 +78,7 @@ struct ProposedLeaf {
 enum StageError {
     Injected(usize),
     ConflictingExclusiveAlias,
+    UntrackedExistingAlias,
     Leaf(page_entry::TableError),
 }
 
@@ -98,6 +99,23 @@ fn stage_candidate_leaves(
             .any(|prior| prior.frame == mapping.frame && (prior.exclusive || mapping.exclusive))
         {
             return Err(StageError::ConflictingExclusiveAlias);
+        }
+        // The proposed batch is not an exhaustive inventory of earlier mappings.
+        // Admit an existing alias only when this same batch explicitly staged it
+        // as shareable. A preexisting entry has no trustworthy share metadata.
+        if (0..512).any(|slot| {
+            table.entry(slot).is_some_and(|entry| {
+                (entry & 1 != 0)
+                    && (entry & !0xfff) == mapping.frame
+                    && !plan[..index].iter().any(|prior| {
+                        prior.slot == slot
+                            && prior.frame == mapping.frame
+                            && !prior.exclusive
+                            && !mapping.exclusive
+                    })
+            })
+        }) {
+            return Err(StageError::UntrackedExistingAlias);
         }
         table
             .insert(mapping.slot, mapping.frame, 36, true)
@@ -207,4 +225,24 @@ fn exclusive_alias_is_rejected_without_banning_all_intentional_aliases() {
     );
     assert_eq!(shared_candidate.entry(plan[0].slot), Some(0x4003));
     assert_eq!(shared_candidate.entry(plan[1].slot), Some(0x4003));
+}
+
+#[test]
+fn unknown_preexisting_alias_is_rejected_for_exclusive_and_shared_proposals() {
+    for exclusive in [true, false] {
+        let mut candidate = LeafTable::new();
+        candidate.insert(23, 0x4000, 36, true).unwrap();
+        let mut plan = proposed_leaves();
+        plan[0].exclusive = exclusive;
+
+        assert_eq!(
+            stage_candidate_leaves(&mut candidate, &plan, None),
+            Err(StageError::UntrackedExistingAlias)
+        );
+        // The candidate did not overwrite its older mapping or stage a new one.
+        assert_eq!(candidate.entry(23), Some(0x4003));
+        for mapping in plan {
+            assert_eq!(candidate.entry(mapping.slot), Some(0));
+        }
+    }
 }
