@@ -3,10 +3,10 @@
 //! Run: kani rust-kernel/research/kani_frame_registry.rs
 #![allow(dead_code)]
 
-#[path = "../src/memory.rs"]
-mod memory;
 #[path = "../src/frame_registry.rs"]
 mod frame_registry;
+#[path = "../src/memory.rs"]
+mod memory;
 
 #[cfg(kani)]
 mod verification {
