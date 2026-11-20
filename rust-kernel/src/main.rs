@@ -331,7 +331,10 @@ fn run_kernel(state: kernel_state::KernelState<16>) -> ! {
     halt_forever()
 }
 
-fn check_boot_memory() -> (frame_registry::TransactionalFrameAllocator<16>, memory::BootMapSnapshot) {
+fn check_boot_memory() -> (
+    frame_registry::TransactionalFrameAllocator<16>,
+    memory::BootMapSnapshot,
+) {
     let selection = match boot_memory::initial_frame_pool() {
         Ok(pool) => pool,
         Err(boot_memory::BootMapError::AlreadyIssued) => {
