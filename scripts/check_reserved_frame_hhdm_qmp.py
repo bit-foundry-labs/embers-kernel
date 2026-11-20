@@ -117,22 +117,40 @@ def walk_hhdm(root: int, va: int, read_word,
 
 
 def inspect_reservations(samples: list[tuple[int, int]], root: int,
-                         read_word, physical_bits: int) -> list[tuple[int, int]]:
-    """Check first/last byte of both reserved frames against physical identity."""
+                         read_word, physical_bits: int,
+                         visited_tables: set[int] | None = None) -> list[tuple[int, int]]:
+    """Check frame mappings are disjoint from tables on sampled HHDM paths.
+
+    Only the paging-structure pages visited by these four walks are checked,
+    NOT the complete inherited hierarchy or any unobserved aliases.
+    """
     check(len(samples) == 2 and samples[1][0] == samples[0][0] + PAGE,
           "missing or nonadjacent reserved frames")
+    reserved = {physical for physical, _ in samples}
+    tables = set()
+
+    def checked_table_read(address: int) -> int:
+        table_page = address & ~(PAGE - 1)
+        check(table_page not in reserved,
+              "reserved frame backs active HHDM paging structure")
+        tables.add(table_page)
+        return read_word(address)
+
     results = []
     for physical, va in samples:
         sizes = set()
         for offset in (0, PAGE - 1):
-            observed, leaf_size = walk_hhdm(root, va + offset, read_word, physical_bits)
+            observed, leaf_size = walk_hhdm(
+                root, va + offset, checked_table_read, physical_bits)
             check(observed == physical + offset,
                   "HHDM translation differs from reported reserved frame")
             sizes.add(leaf_size)
         check(len(sizes) == 1, "inconsistent leaf size across one frame")
         results.append((physical, next(iter(sizes))))
+    check(root in tables, "inherited CR3 root not inspected")
+    if visited_tables is not None:
+        visited_tables.update(tables)
     return results
-
 
 def run(cpu: str, iso: Path) -> None:
     check(cpu in ("max", "qemu64"), "unsupported QEMU CPU model")
@@ -175,9 +193,11 @@ def run(cpu: str, iso: Path) -> None:
                     words[address] = xp_word(monitor.hmp(f"xp /1gx 0x{address:x}"))
                 return words[address]
 
+            visited_tables = set()
             result = inspect_reservations(
-                samples, current & FRAME_MASK, read_word, physical_bits)
+                samples, current & FRAME_MASK, read_word, physical_bits, visited_tables)
             print(f"PASS: {cpu} reserved-frame HHDM address translations observed")
+            print(f"  disjoint from {len(visited_tables)} visited paging-structure frames")
             print(f"  inherited CR3=0x{current:016x}; MAXPHYADDR={physical_bits}")
             for frame, size in result:
                 print(f"  frame=0x{frame:016x}; leaf={size // 1024} KiB; RW, supervisor PTE path")
@@ -220,6 +240,12 @@ def self_test() -> None:
     assert inspect_reservations(samples, root, cells.__getitem__, 40) == [
         (frame, PAGE), (frame + PAGE, PAGE)
     ]
+    visited = set()
+    assert inspect_reservations(samples, root, cells.__getitem__, 40, visited) == [
+        (frame, PAGE), (frame + PAGE, PAGE)
+    ]
+    assert visited == {root, 0x2000, 0x3000, 0x4000}
+    assert not visited.intersection({frame, frame + PAGE})
     # A user-set leaf with a supervisor-only ancestor is still restricted.
     mixed = dict(cells)
     mixed[pt] |= USER
@@ -270,6 +296,18 @@ def self_test() -> None:
     bad[pt] = (frame + 2 * PAGE) | 3
     rejected(lambda: inspect_reservations(
         samples, root, bad.__getitem__, 40), "differs from reported")
+    # Fail closed if the inherited root OR a traversed PT is a candidate.
+    rejected(lambda: inspect_reservations(
+        samples, frame, cells.__getitem__, 40),
+        "reserved frame backs active HHDM paging structure")
+    bad_table = dict(cells)
+    bad_table[pd] = frame | 3  # Sampled PT frame collides with candidate.
+    rejected(lambda: inspect_reservations(
+        samples, root, bad_table.__getitem__, 40),
+        "reserved frame backs active HHDM paging structure")
+    rejected(lambda: inspect_reservations(
+        samples, frame + PAGE, cells.__getitem__, 40),
+        "reserved frame backs active HHDM paging structure")
     rejected(lambda: walk_hhdm(0, va, cells.__getitem__, 40),
              "invalid inherited CR3 root")
     rejected(lambda: walk_hhdm(PHYSICAL_RAM, va, cells.__getitem__, 40),
