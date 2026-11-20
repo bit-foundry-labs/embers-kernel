@@ -33,10 +33,7 @@ pub struct BootMapSnapshot {
 impl BootMapSnapshot {
     /// Retain only the copied entries; reject malformed lengths before slicing.
     /// This does not independently validate the region values or provenance.
-    pub fn from_copied_entries(
-        regions: [Region; MAX_BOOT_REGIONS],
-        count: usize,
-    ) -> Option<Self> {
+    pub fn from_copied_entries(regions: [Region; MAX_BOOT_REGIONS], count: usize) -> Option<Self> {
         if count == 0 || count > MAX_BOOT_REGIONS {
             return None;
         }
