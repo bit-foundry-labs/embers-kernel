@@ -222,11 +222,7 @@ fn all_two_request_interleavings_serialize_budget_debits() {
                 );
                 assert_eq!(retry.is_ok(), first + second <= 8);
                 let left_balance = model.table.grant(Slot(0), 1).unwrap().remaining;
-                let delegated = if retry.is_ok() {
-                    first + second
-                } else {
-                    first
-                };
+                let delegated = if retry.is_ok() { first + second } else { first };
                 assert_eq!(left_balance, Budget::new(8 - delegated, 8 - delegated));
             }
         }
@@ -238,7 +234,10 @@ fn exhausted_counters_and_forged_owners_fail_without_mutation() {
     let mut model = Sequenced::new();
     let root = Sequenced::root();
     let snapshot = model.observe(root, 1).unwrap();
-    assert_eq!(model.observe(root, 2), Err(Error::Grant(Denied::WrongOwner)));
+    assert_eq!(
+        model.observe(root, 2),
+        Err(Error::Grant(Denied::WrongOwner))
+    );
     model.versions[0] = u8::MAX;
     let before = model.clone();
     assert_eq!(
