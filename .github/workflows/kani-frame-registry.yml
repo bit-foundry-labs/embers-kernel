@@ -5,6 +5,10 @@ on:
     paths:
       - "rust-kernel/research/kani_frame_registry.rs"
       - "rust-kernel/research/KANI_FRAME_REGISTRY.md"
+      - "rust-kernel/research/kani_transactional_allocator.rs"
+      - "rust-kernel/research/KANI_TRANSACTIONAL_ALLOCATOR.md"
+      - "rust-kernel/src/frame_registry.rs"
+      - "rust-kernel/src/memory.rs"
       - ".github/workflows/kani-frame-registry.yml"
 
 permissions:
@@ -29,3 +33,8 @@ jobs:
         run: |
           set -euo pipefail
           kani rust-kernel/research/kani_frame_registry.rs
+      - name: Check bounded transactional allocator proof harnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          kani rust-kernel/research/kani_transactional_allocator.rs
