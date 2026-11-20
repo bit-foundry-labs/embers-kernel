@@ -36,4 +36,6 @@ if ! grep -q 'Invariant NoLateCommit is violated' .check-logs/buggy.log; then
   cat .check-logs/buggy.log
   exit 1
 fi
-echo "PASS: corrected TLA+ invariants; broken model produced expected counterexample"
+python3 check_mutations.py --self-test
+python3 check_mutations.py "$JAR"
+echo "PASS: corrected TLA+ invariants; broken model and three guard mutants produced expected counterexamples"
