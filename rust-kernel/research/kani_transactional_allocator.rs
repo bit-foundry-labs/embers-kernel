@@ -90,8 +90,8 @@ mod verification {
         let remaining_before = frames.remaining_pages();
         let pages: u8 = kani::any();
         let owner: u8 = kani::any();
-        kani::assume((1..=6).contains(&pages));
-        kani::assume((1..=2).contains(&owner));
+        kani::assume(pages >= 1 && pages <= 6);
+        kani::assume(owner >= 1 && owner <= 2);
 
         let record = frames.reserve(u64::from(pages), u32::from(owner)).unwrap();
 
@@ -114,7 +114,7 @@ mod verification {
         let initial = frames.reservation(0);
         let remaining_before = frames.remaining_pages();
         let pages: u8 = kani::any();
-        kani::assume((1..=6).contains(&pages));
+        kani::assume(pages >= 1 && pages <= 6);
 
         let result = frames.reserve(u64::from(pages), 2);
         assert_eq!(
