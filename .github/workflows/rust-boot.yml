@@ -9,6 +9,7 @@ on:
       - "scripts/check_rust_elf.py"
       - "scripts/check_elf_loads.py"
       - "scripts/check_active_pte_qmp.py"
+      - "scripts/check_reserved_frame_hhdm_qmp.py"
       - "Makefile"
       - ".github/workflows/rust-boot.yml"
   # Required checks must run even for documentation-only pull requests.
@@ -20,7 +21,7 @@ permissions:
 jobs:
   boot-matrix:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -49,9 +50,15 @@ jobs:
         run: make rust-transition-stack-test
       - name: Test read-only QMP 4 KiB walker negative paths on host
         run: make rust-active-pte-test
-      - name: Provision QEMU and ISO tools with mirror fallback
+      - name: Install emulator and ISO tools
         shell: bash
-        run: bash scripts/install_qemu_ci.sh
+        run: |
+          set -euo pipefail
+          # Avoid a ten-minute hang when Ubuntu package mirrors are unreachable.
+          timeout 60s sudo apt-get update -o Acquire::Retries=0 -o Acquire::http::Timeout=12 -o Acquire::https::Timeout=12
+          timeout 90s sudo apt-get install -y -o Acquire::Retries=0 -o Acquire::http::Timeout=12 -o Acquire::https::Timeout=12 qemu-system-x86 xorriso
+          command -v qemu-system-x86_64
+          command -v xorriso
       - name: Reject stale unverified Limine worktree inputs
         shell: bash
         run: |
@@ -108,6 +115,14 @@ jobs:
             --cpu "${{ matrix.cpu_model }}" \
             --iso build/embers-rust.iso \
             --elf rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel
+      - name: Verify boot frame HHDM backing with read-only paused QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_reserved_frame_hhdm_qmp.py --self-test
+          python3 scripts/check_reserved_frame_hhdm_qmp.py \
+            --cpu "${{ matrix.cpu_model }}" \
+            --iso build/embers-rust.iso
       - name: Feature-gated transition stack BSS probe in QEMU
         shell: bash
         run: |
