@@ -170,7 +170,63 @@ Sources are a curated starting set, not a systematic literature review. All repo
 
 **R1 follow-up acceptance:** (a) inspect all direct/indirect `FramePool` and physical-memory writers, including feature combinations, `unsafe` operations and assembly; (b) map real Limine region exclusions and lifetimes; (c) model or test duplicate issuance through every permitted constructor without fabricating auth; (d) trace the lifetime of each frame into any later table mapping; (e) document which assumptions remain at the CPU and DMA layers. This follow-up remains review-only until its scope is agreed.
 
-## 9. Research ethics, reproducibility, and contribution boundaries
+## 9. Rust soundness, security, and code quality review
+
+**Status:** Targeted **read-only source inspection** of default-branch files as of 2026-11-20, plus an implementation-independent research and PR review protocol. **No vulnerabilities or soundness proofs are asserted.** The audit did not execute hardware, dynamic analysis, Kani, Miri, or any new tests. This supplements the existing [code review standard](CODE_REVIEW_STANDARD.md) and [security reporting policy](../SECURITY.md); it does not replace either.
+
+### 9.1 Why Rust alone is insufficient
+
+The [Rust Reference on undefined behavior](https://doc.rust-lang.org/reference/behavior-considered-undefined.html), [Rust pointer/provenance documentation](https://doc.rust-lang.org/core/ptr/index.html), and [Rustonomicon](https://doc.rust-lang.org/nomicon/) specify rules and open modeling questions relevant to raw pointers, references, aliasing, initialized values, and the boundary between physical devices and Rust's abstract machine. In bare-metal code, address arithmetic and a writable CPU mapping **do not by themselves justify creating a Rust `&mut T`**; validity, alias exclusion, alignment, initialization, provenance and lifetime require separate reasoning. Explicit physical/MMIO access may need exposed-provenance mechanisms rather than pretending hardware was allocated by an ordinary Rust allocator; document the precise case, not a universal rule that all integer-derived pointers are invalid.
+
+The peer-reviewed [Rust-for-Linux security study (ACSAC 2024)](https://www.acsac.org/2024/program/final/s480.html) and [PLOS 2026: Actual Guarantees of Rust-based Systems](https://sing.stanford.edu/site/assets/summaries/tiffany-plos26.html) warn against translating Rust memory safety into assumed authorization, confidentiality, capability or isolation guarantees. A memory-safe extension may still violate *system* policy. [TickTock (SOSP 2025)](https://doi.org/10.1145/3731569.3764856) motivates a specified isolation invariant before choosing the process abstraction; its verified properties do not transfer automatically to Embers.
+
+**Design rule for Embers:** Never treat `Safe Rust`, `Send`/`Sync`, an immutable reference, an owner ID, or a valid numeric HHDM candidate as an authorization or global isolation proof. Security properties belong in separately reviewed contracts backed by enforced authority and executable negative tests.
+
+### 9.2 Targeted code evidence and review questions
+
+| Component | Observation verified in `main` | Required follow-up proof or review |
+| --- | --- | --- |
+| [`src/main.rs`](../rust-kernel/src/main.rs) | Uses `#![deny(unsafe_op_in_unsafe_fn)]` and explicit privileged call sites. | Verify actual caller assumptions, CPU privilege, interrupt state, register/clobber constraints and error paths across enabled feature combinations; linting alone is not a semantic proof. |
+| [`src/boot_memory.rs`](../rust-kernel/src/boot_memory.rs), [`src/boot_addresses.rs`](../rust-kernel/src/boot_addresses.rs) | `read_volatile` of Limine response pointers has contextual `SAFETY:` comments; count and some metadata are checked. | Confirm bootloader ABI, pointer alignment, readable extents, memory lifetime, exclusive mutation assumptions, and any runtime pointer provenance before relying on these as a root of physical authority. Checking counts cannot make a corrupted/unmapped pointer safe to dereference. |
+| [`src/arch.rs`](../rust-kernel/src/arch.rs), [`src/paging_mode.rs`](../rust-kernel/src/paging_mode.rs) | Privileged assembly/descriptor operations and read-only CR observations have comments and selected QEMU tests. | Review instruction side effects, descriptor layouts, live stack/IDT/GDT/TSS mapping lifetimes, reserved bits and faults. Read-only registers and QEMU checks cannot authenticate a frame. |
+| [`src/frame_registry.rs`](../rust-kernel/src/frame_registry.rs), [`src/memory.rs`](../rust-kernel/src/memory.rs) | Bounded numeric reservations, separate preview and commit, checked arithmetic and targeted host negative tests. | Investigate unique authority across every permitted allocation route and cross-module lifetime. Model-check bounded overflow, overlap, capacity, and rejection atomicity. Do not create new authority via unchecked wrappers. |
+| [`src/transition_stack.rs`](../rust-kernel/src/transition_stack.rs) | Feature-only read/write probes operate on private static storage under inherited mappings. | Preserve tests' feature restrictions; check page boundaries, pointer derivation, restoring content on all tested paths and the limits of point probes versus whole-stack lifetime. |
+| [`experiments/rust-policy-guard`](../experiments/rust-policy-guard/README.md) | Pure host tests reject inappropriate policy inputs and check simulated minimum reservations. | Keep a policy proposal separate from an authenticated capability; validate epoch, tenant and quota at the eventual kernel admission boundary. No user-space authority guarantee exists today. |
+
+These are **questions for independent review**, not reports of exploitable defects. In particular, Limine pointer assumptions are an explicit bootloader trust boundary today; the review cannot establish that the bootloader is malicious or the handoff is invalid.
+
+### 9.3 A concrete clean-Rust review contract
+
+Keep [`CODE_REVIEW_STANDARD.md`](CODE_REVIEW_STANDARD.md) normative. For each **new** kernel PR, reviewers should request evidence in this order:
+
+1. **Threat/ownership invariant:** Name the trusted caller, authority source, frame/object owner, permitted transition, and rejection behavior. If an invariant is not expressible, pause implementation.
+2. **Small readable API:** Prefer one cohesive module per responsibility, descriptive domain types, `Result`/specific error variants, checked arithmetic and a single auditable validation/commit boundary. Avoid arbitrary line-count limits, ornamental traits, and splitting atomicity across loosely coupled helpers.
+3. **`unsafe` audit:** For every new `unsafe` block require adjacent `// SAFETY:` explaining a *specific* proven precondition, not merely “runs in the kernel.” For each `unsafe fn` document `# Safety` caller obligations. Consider whether a private safe wrapper prevents misuse without concealing hardware lifetime or aliasing constraints.
+4. **Negative-first tests:** Test invalid addresses, malformed boot inputs, failed commits, duplicate issuance, stale handles and cancellation where in scope; preserve unchanged state on rejection. Include both focused host tests and applicable exact-head QEMU profiles, without inflating host-model results into hardware guarantees.
+5. **Tool and evidence discipline:** Run relevant `rustfmt`, Clippy with `-D warnings`, focused Rust host tests, and boot/exception CI; independently inspect tests **not** covered by a particular workflow. Code complexity and `unsafe` surface should increase only when justified by a measurable or provable contract.
+6. **Change hygiene:** One bounded behavior per PR; avoid unrelated refactors, unnecessary dependencies, large formatter churn, unreviewed snapshots, hidden feature-gate behavior, and documentation that overstates the implementation. Record pinned head SHA, executed commands, failures and reviewer open questions.
+
+[Linux Rust coding guidelines](https://docs.kernel.org/rust/coding-guidelines.html) explicitly distinguish the `# Safety` contract from the `// SAFETY:` justification. This is the meaningful template for Embers rather than copying stylistic conventions wholesale.
+
+### 9.4 CI, dependency and contributor-security findings
+
+| Current repository fact | Assessment and low-risk next action |
+| --- | --- |
+| `rust-kernel/Cargo.toml` has **no third-party package dependencies** and a pinned `rust-toolchain.toml` (1.90.0); `Cargo.lock` currently lists only the kernel crate. | Good minimal freestanding dependency surface. No claim of zero supply-chain risk: Rust/CI tooling, Limine, GitHub Actions, QEMU and host scripts are still external inputs. Run [RustSec `cargo-audit`](https://github.com/rustsec/rustsec/blob/main/cargo-audit/README.md) when nontrivial Cargo dependencies are introduced; it cannot audit handwritten assembly or all boot tooling. |
+| Required workflows run `rustfmt`, Clippy, memory/exception host tests and QEMU boot matrices; [`rust-memory.yml`](../.github/workflows/rust-memory.yml) also runs frame-registry/paging host tests. | These are meaningful regression gates, not proof of `unsafe` soundness, exhaustive test coverage or physical isolation. Keep workflow-to-test coverage explicitly documented. |
+| Some GitHub Actions use mutable major-version tags (`actions/checkout@v4`, etc.). The policy-guard workflow installs a floating `stable` toolchain and has no explicit top-level `permissions:` block. | Research a separate **workflow-hardening** PR: review pinned full action SHAs, opt-in updates, and explicit least-privilege `contents: read` where appropriate; pin the policy experiment toolchain if reproducibility justifies it. Do **not** infer that a current workflow is compromised or change credentials/branch rules in this research PR. See [OpenSSF Scorecard](https://scorecard.dev/) and its [dependency pinning guidance](https://github.com/ossf/scorecard/blob/main/docs/faq.md). |
+| [`SECURITY.md`](../SECURITY.md) disallows production use and requests private vulnerability reporting when available. | Keep the research warning visible. Independently verify the repository's actual private reporting and branch-rule configuration before claiming they are enabled. |
+| Policy-guard and TLA+ workflows are path-scoped. | When changing a shared contract, verify relevant experiment/formal checks explicitly; a green kernel boot suite alone does not validate every cross-subsystem model. |
+
+### 9.5 Verification pilot: evidence, not tooling theater
+
+Propose a **separate optional, host-only Kani experiment** on one pure allocator invariant (e.g. `FrameRegistry::reserve` rejects overlap and leaves records unchanged, or `FramePool::reserve_contiguous` stays within its selected span). [Kani](https://model-checking.github.io/kani/) checks reachable safety properties and assertions on its modeled Rust program, subject to bounded unwinding, supported language features and resource limits. It does **not** verify privileged assembly, real-device DMA, or a live page-table switch.
+
+**Pilot gates:** (i) select a real source function and define symbolic inputs and bounds, not a manually weakened copy; (ii) produce a deliberately failing harness and its counterexample; (iii) pass the intended invariant; (iv) record tool version, target, assumptions, time and exact source commit; (v) keep Kani-specific dependencies out of the freestanding boot build; (vi) require an independent reviewer to judge whether the proven property matters. Failure or excessive proof cost is a valid result, not a reason to lower the property silently.
+
+**Security research priority:** complete the R1 memory-provenance and `unsafe` audit *before* real page-table writes; perform code-quality checks alongside every bounded PR; defer broader fuzzing, concurrency verification and supply-chain automation until the corresponding code, interfaces or dependencies warrant them. Do not block research bootstrapping on an imaginary “fully hardened OS” milestone.
+
+## 10. Research ethics, reproducibility, and contribution boundaries
 
 - Do not describe the proposed design as secure, verified, faster than Linux, or AI-optimized without the appropriate implementation and reproducible evidence.
 - Preserve license notices; this document paraphrases engineering concepts and links sources, not paper text or copied code.
