@@ -26,7 +26,7 @@ pub struct FrameSpan {
 
 impl FrameSpan {
     pub fn new(start: u64, pages: u64) -> Result<Self, GateError> {
-        if start < MIN_FRAME_ADDRESS || start % PAGE_BYTES != 0 || pages == 0 {
+        if start < MIN_FRAME_ADDRESS || !start.is_multiple_of(PAGE_BYTES) || pages == 0 {
             return Err(GateError::InvalidRange);
         }
         let size = pages
@@ -171,6 +171,8 @@ impl FrameRecord {
 
 // Deliberately NO release-to-free or reinterpret-as-capability operation.
 // Even Quarantined cannot be reused under this research model.
+
+fn main() {}
 
 #[cfg(test)]
 mod tests {
@@ -355,5 +357,3 @@ mod tests {
         assert_eq!(reserved.phase, Phase::Reserved);
     }
 }
-
-fn main() {}
