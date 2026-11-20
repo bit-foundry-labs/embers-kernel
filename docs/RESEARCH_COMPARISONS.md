@@ -134,6 +134,59 @@ Related Embers work: [M06 transition contract](PAGING_TRANSITION_V1.md),
 [read-only integration review #84](https://github.com/bit-foundry-labs/embers-kernel/issues/84),
 and [fail-closed transition research #65](https://github.com/bit-foundry-labs/embers-kernel/issues/65).
 
+### The missing authority chain: address, reservation, mapping, lifetime
+
+**What existing Embers code proves:** \`boot_memory::initial_frame_pool\`
+uses Limine's reported map and a one-use safe-Rust permit;
+\`TransactionalFrameAllocator\` keeps a monotonic pool alongside a bounded
+registry; \`KernelState\` retains the allocator through the BSP handoff.
+These are meaningful software controls. However, the permitted source is still
+trusted bootloader metadata, numeric owner IDs are not authenticated, and
+\`KernelState\` host tests explicitly demonstrate that independently
+constructed synthetic pools can issue the same physical frame. The optional
+ownership smoke path and direct raw-pool/registry APIs are still identified as
+bypasses in \`M06E_TRANSACTIONAL_RESERVATIONS.md\`.
+
+**Linux comparison:** kernel page-table documentation notes that one physical
+page can have multiple virtual mappings and that failed mapping-permission
+updates may leave changes partly applied. A reservation record alone cannot
+establish current alias coverage, CPU permissions, or safe reuse.
+
+**seL4 comparison:** its untyped-memory capability and retype mechanism
+connects an authority-bearing memory region to descendant objects. This is
+a useful **design contrast**, not a proposal to copy seL4's API or claim its
+formal assurance. Embers currently has no equivalent authenticated retype
+path.
+
+For the proposed first Embers-owned page-table frame, require distinct evidence
+for each link of the chain:
+
+| Step | Existing evidence | Still needed before real table writes |
+| --- | --- | --- |
+| **Physical source** | Limine memory map is bounded/validated for numeric consistency; only selected usable regions feed the initial pool. | Review the exact base-revision-6 map and relevant reserved, kernel, and bootloader lifetimes; keep the bootloader as a stated trust assumption. |
+| **Single issuer** | One-shot production permit, move-owned allocator and per-registry overlap rejection. | Audit every live allocation route and its ownership lifetime; close raw-pool bypasses. A second independently constructed issuer must not claim the same frame. |
+| **Exclusive reservation** | A resident record exists for accepted boot allocations. | Tie every page-table reservation to the sole issuer and exclude image, boot metadata, device and other live allocations. The owner number is not a capability. |
+| **Accessible mapping** | Read-only QMP samples and separate address/permission models are under review. | Prove that each specific reserved frame is actually writable through a verified current mapping before zeroing or constructing tables; distinguish sampled aliases from exhaustive coverage. |
+| **Initialized content** | No production table-frame zeroing or builder exists. | Establish a bounded, checked zero/init path and verify bytes, failures and table-entry encodings without publishing an incomplete root. |
+| **Survival and reclamation** | The M06 design documents code/stack/descriptor survival obligations; reclamation is disabled. | Preserve all live mappings across a gated future CR3 switch; keep uncertain frames quarantined. TLB, multicore, bootloader lifetime and DMA/IOMMU assumptions require separate evidence. |
+
+**Specific next test, when prerequisites exist:** extend the single-issuer
+allocator with a typed, non-cloneable table-frame reservation, with host
+negative tests for duplicate issuance, excluded map regions and failures
+after only part of the table has been staged. Do **not** manufacture an
+authority-bearing type around unchecked \`FrameReservation\` metadata; start
+with a review of how the validated source becomes a unique live issuer.
+Pair any later actual frame zeroing and mapping construction with controlled
+QEMU checks, not just a green pure-Rust model.
+
+References: [Limine memory layout/HHDM and memory-map contract](https://github.com/limine-bootloader/limine-protocol/blob/trunk/PROTOCOL.md),
+[seL4 untyped memory and retype](https://docs.sel4.systems/Tutorials/untyped.html),
+[Linux kernel page-table permissions and failure semantics](https://docs.kernel.org/mm/kernel-page-tables.html),
+[Embers boot allocator handoff](../rust-kernel/BOOT_ALLOCATOR_HANDOFF.md),
+[M06e allocator caveats](../rust-kernel/M06E_TRANSACTIONAL_RESERVATIONS.md),
+[frame registry design](../rust-kernel/M06D_RANGE_REGISTRY.md),
+and [M06 transition proposal](PAGING_TRANSITION_V1.md).
+
 ### CPU mappings do not confer device authority (later milestone)
 
 Linux's DMA documentation distinguishes CPU virtual addresses, physical RAM
