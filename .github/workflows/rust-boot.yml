@@ -45,6 +45,8 @@ jobs:
         run: make rust-serial-test
       - name: Test paging mode validator on host
         run: make rust-paging-mode-test
+      - name: Test page-entry, page-walk, and staged-failure research on host
+        run: make rust-paging-research-test
       - name: Test dedicated transition-stack range checks on host
         run: make rust-transition-stack-test
       - name: Test read-only QMP 4 KiB walker negative paths on host
