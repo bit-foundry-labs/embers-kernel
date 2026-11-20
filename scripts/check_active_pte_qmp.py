@@ -575,6 +575,22 @@ def self_test() -> None:
     assert inspect_bsp_stack_samples(
         early_rsp, paused_rsp, root, wrong_leaf.__getitem__, 40)["paused"] == (
             PHYSICAL_RAM - PAGE)
+    # A read-only upper-level entry must fail even when the leaf is writable.
+    readonly_parent = dict(sample_cells)
+    readonly_parent[0x3000 + indices[2] * 8] &= ~2
+    rejected(lambda: inspect_bsp_stack_samples(
+        early_rsp, paused_rsp, root, readonly_parent.__getitem__, 40),
+        "early RSP has a read-only PTE chain")
+    # A leaf frame at the observed RAM limit must fail closed.
+    outside_ram = dict(sample_cells)
+    outside_ram[0x4000 + indices[3] * 8 + 8] = PHYSICAL_RAM | 3
+    rejected(lambda: inspect_bsp_stack_samples(
+        early_rsp, paused_rsp, root, outside_ram.__getitem__, 40),
+        "observed QEMU RAM")
+    # A page-aligned RSP must be checked against the page below it.
+    assert inspect_bsp_stack_samples(
+        va + PAGE, va + PAGE, root, cells.__getitem__, 40) == {
+            "early": 0x0FF44000, "paused": 0x0FF44000}
     large_page = dict(sample_cells)
     large_page[0x3000 + indices[2] * 8] |= 1 << 7
     rejected(lambda: inspect_bsp_stack_samples(
