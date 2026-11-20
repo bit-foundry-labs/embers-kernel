@@ -38,6 +38,10 @@ jobs:
           (cd rust-kernel && rustfmt --edition 2021 --check research/pte_fields.rs)
           (cd rust-kernel && clippy-driver --edition=2021 --test research/pte_fields.rs -D warnings -o /tmp/embers-pte-fields-clippy)
           make rust-pte-fields-test
+          # Host-only model: compile and execute its real negative tests.
+          (cd rust-kernel && rustfmt --edition=2021 --check research/frame_lifetime_contract.rs)
+          (cd rust-kernel && clippy-driver --edition=2021 --test research/frame_lifetime_contract.rs -D warnings -o /tmp/embers-m06-lifetime-gate)
+          /tmp/embers-m06-lifetime-gate --nocapture
       - name: Provision QEMU and ISO tools with mirror fallback
         shell: bash
         run: bash scripts/install_qemu_ci.sh
