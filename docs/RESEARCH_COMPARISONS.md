@@ -93,3 +93,112 @@ revocation, and fallback remain enforced by deterministic kernel mechanisms.
 Deterministic validation does not make an adaptive system's behavior
 deterministic. Compare adaptive and non-adaptive policies under identical
 workloads, and measure failure, fairness, and overhead as well as speed.
+
+## Linux engineering lessons: testable implications for Embers
+
+**Reference, not architecture:** Linux is a predominantly monolithic kernel;
+Embers is an original Rust-first microkernel research effort. The sources below
+offer failure-mode and development-process lessons, not Linux code to port,
+evidence that Embers has implemented these mechanisms, or a reason to expand
+the current milestone. Keep this work separate from Linux-based Emberglass OS.
+
+### Page-table aliases and partial failure (M06; highest priority)
+
+The Linux kernel page-table documentation distinguishes mapping permissions
+from physical memory ownership. A physical page can have multiple virtual
+aliases with different permissions. It also warns that some permission-update
+APIs can fail **after modifying only a prefix** of the requested range, without
+automatic rollback. Success codes can be insufficient evidence of actual
+permission enforcement on unsupported architectures.
+
+- **Embers implication:** an observed present/writable PTE is not authenticated
+  frame ownership or an exhaustive absence-of-aliases result. The read-only QMP
+  observations proposed in PRs #81 and #83 must retain those limitations.
+- **Future contract question:** how will the M06 table builder validate every
+  intended mapping, physical frame, ancestor permission and conflicting alias
+  before installing a new root, and what happens if construction fails halfway?
+- **Bounded follow-up (host-only first):** add fault-injection tests at each
+  proposed frame reservation/table-build stage. Assert that failures never
+  invoke a mock CR3 writer, never publish an incomplete root, and do not
+  recycle a frame whose backing, mapping, or lifetime is uncertain. Include a
+  fixture with two modeled virtual aliases to a single physical frame and
+  reject it when they violate the intended exclusive-mapping contract.
+- **Evidence limit:** rejecting aliases in an enumerated model does **not**
+  establish that all live hardware aliases were discovered, that DMA is
+  inactive, or that any privileged CR3 switch is safe.
+
+Reference: [Linux kernel page tables: aliases, partial updates and TLB
+handling](https://docs.kernel.org/mm/kernel-page-tables.html).
+Related Embers work: [M06 transition contract](PAGING_TRANSITION_V1.md),
+[page-table ownership](../rust-kernel/PAGE_TABLE_OWNERSHIP.md),
+[read-only integration review #84](https://github.com/bit-foundry-labs/embers-kernel/issues/84),
+and [fail-closed transition research #65](https://github.com/bit-foundry-labs/embers-kernel/issues/65).
+
+### CPU mappings do not confer device authority (later milestone)
+
+Linux's DMA documentation distinguishes CPU virtual addresses, physical RAM
+and device-visible DMA addresses. The IOMMU and DMA mapping lifecycle have
+different contracts from CPU page-table traversal.
+
+- **Embers implication:** a frame is not safe to transfer or recycle just
+  because a CPU PTE was removed, a capability was logically revoked, or a Rust
+  reference ceased to exist.
+- **Deferred experiment:** construct a host-only state model with separate
+  `cpu_mapping`, `device_mapping`, `in_flight` and `quiesced` states.
+  Require explicit device quiescence before reclaim; test revocation racing
+  with in-flight operations. Avoid claiming physical DMA protection until
+  actual hardware/IOMMU paths and device behavior are reviewed.
+- **Evidence limit:** such a model checks proposed ordering, not a real
+  device, its firmware, or the IOMMU.
+
+Reference: [Linux DMA mapping guide](https://docs.kernel.org/core-api/dma-api-howto.html).
+Related Embers work: [research comparisons: ownership transfer](RESEARCH_COMPARISONS.md#ownership-transfer-and-accelerator-isolation).
+
+### Lock ordering, revocation, and concurrency (after isolation)
+
+Linux's `lockdep` validates observed lock-dependency scenarios and can detect
+potential deadlock cycles. It is an instructive example of making an implicit
+concurrency assumption observable, but not a ready-made algorithm for
+capability revocation.
+
+- **Embers implication:** future endpoint locks, frame ownership changes,
+  capability-table access and revocation will need declared acquisition order
+  and linearization points.
+- **Deferred experiment:** model two conflicting resource-acquisition orders
+  and assert a detected cycle; then test a proposed single order and explicit
+  revocation/IPC commit points. Compare the result with existing finite-state
+  revocation research, rather than treating observed schedules as an
+  exhaustive hardware-concurrency proof.
+- **Prerequisite:** protected tasks, a syscall/IPC boundary and real
+  synchronization mechanisms are not yet on `main`.
+
+References: [Linux lock dependency validator](https://docs.kernel.org/locking/lockdep-design.html)
+and [Embers IPC v1 contract](IPC_V1_CONTRACT.md).
+
+### Small changes and reviewable evidence (use now)
+
+Linux's contribution guidance emphasizes small, self-contained patches,
+clear problem statements, measured optimization claims, and review of
+behavioral consequences.
+
+- **Embers application:** preserve one concern per PR and record the relevant
+  base/head, exact files, expected negative fixtures, observed QEMU CPU
+  profiles, and what each check does **not** prove.
+- **Immediate implication:** seek independent, exact-head review for PRs #81
+  and #83 as requested in issue #84. Do not combine their unverified
+  observations with draft privileged-transition work or infer a safe CR3
+  transition from green host tests.
+- **Evidence limit:** this is a process discipline; review and CI reduce
+  uncertainty but are not a formal proof or hardware security guarantee.
+
+References: [Linux development HOWTO](https://docs.kernel.org/process/howto.html),
+[patch submission guide](https://docs.kernel.org/process/submitting-patches.html),
+and [Embers review standard](CODE_REVIEW_STANDARD.md).
+
+**Research-to-implementation gate:** the first new code candidate from this
+comparison is a **host-only M06 partial-construction/fault-injection test
+matrix**, contingent on avoiding duplication with existing research in draft
+PR #66 and pending reviewer findings in #81/#83. It must not change the
+normal QEMU boot image, write page tables, switch CR3, implement IPC, or
+claim a proven isolation boundary. Decide the exact test gap from current
+`main` and PR heads before opening a code PR.
