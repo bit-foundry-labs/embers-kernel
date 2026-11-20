@@ -166,6 +166,24 @@ fn late_leaf_validation_error_preserves_partial_candidate_for_detection() {
 }
 
 #[test]
+fn occupied_middle_slot_keeps_existing_mapping_and_staged_prefix() {
+    let plan = proposed_leaves();
+    let mut candidate = LeafTable::new();
+    // Simulate an already-occupied destination before staging begins.
+    assert_eq!(candidate.insert(plan[1].slot, 0xa000, 36, true), Ok(()));
+
+    assert_eq!(
+        stage_candidate_leaves(&mut candidate, &plan, None),
+        Err(StageError::Leaf(page_entry::TableError::Occupied))
+    );
+    // The first proposal was staged, the prior entry was not overwritten,
+    // and the later proposal was never admitted.
+    assert_eq!(candidate.entry(plan[0].slot), Some(0x4003));
+    assert_eq!(candidate.entry(plan[1].slot), Some(0xa003));
+    assert_eq!(candidate.entry(plan[2].slot), Some(0));
+}
+
+#[test]
 fn exclusive_alias_is_rejected_without_banning_all_intentional_aliases() {
     let mut plan = proposed_leaves();
     plan[1].frame = plan[0].frame;
