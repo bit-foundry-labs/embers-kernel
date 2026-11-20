@@ -64,7 +64,6 @@ fn encoded_supervisor_leaf_drives_translation_and_permissions() {
     }
 }
 
-
 // A host-only staged batch model, not an actual page-table constructor.
 // The real M06 transition is blocked: this never touches frames, CPU page
 // tables, the active root, or a CR3 writer.
@@ -184,7 +183,10 @@ fn exclusive_alias_is_rejected_without_banning_all_intentional_aliases() {
     plan[0].exclusive = false;
     plan[1].exclusive = false;
     let mut shared_candidate = LeafTable::new();
-    assert_eq!(stage_candidate_leaves(&mut shared_candidate, &plan, None), Ok(()));
+    assert_eq!(
+        stage_candidate_leaves(&mut shared_candidate, &plan, None),
+        Ok(())
+    );
     assert_eq!(shared_candidate.entry(plan[0].slot), Some(0x4003));
     assert_eq!(shared_candidate.entry(plan[1].slot), Some(0x4003));
 }
