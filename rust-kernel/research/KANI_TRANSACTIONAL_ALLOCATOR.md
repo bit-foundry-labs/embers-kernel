@@ -1,6 +1,6 @@
 # Kani research: transactional frame-allocation contracts
 
-**Status (2026-11-20):** Experimental, pending exact-head Kani execution and independent review. This is a stacked follow-up to [draft PR #105](https://github.com/bit-foundry-labs/embers-kernel/pull/105), which already establishes bounded registry-only properties.
+**Status (2026-11-20):** Bounded Kani assertions and coverage **passed for the first source-complete checkpoint** `6f0f12af1c7df271aed2bef0873d6266bd205a3a` in [Kani CI run 44820387890](https://github.com/bit-foundry-labs/embers-kernel/actions/runs/44820387890). Independent review and exact-head CI after subsequent documentation changes remain outstanding. This is a stacked follow-up to [draft PR #105](https://github.com/bit-foundry-labs/embers-kernel/pull/105).
 
 ## What this verifies
 
@@ -18,6 +18,14 @@ The harness assumes a single, aligned `USABLE` physical span starting at `MIN_PH
 The observed state is `remaining_pages()` and every `reservation(index)` slot in the registry. A snapshot of `remaining_pages()` is equivalent to the monotonic pool cursor **under the assumed fixed pool end**, but the harness does not inspect private byte-level representations or every possible allocator state.
 
 This research concerns single-threaded atomicity of validation and commit. It does **not** show concurrency linearizability, arbitrary constructor authority, starvation freedom, safe reclamation, DMA/device quiescence, the absence of duplicate physical mappings, or hardware-enforced isolation.
+
+## Verified bounded result and remaining caveat
+
+The cited source checkpoint ran **Kani 0.68.0 and CBMC 6.11.0**. All four transactional harnesses finished `VERIFICATION:- SUCCESSFUL` and reported **zero failed checks**. Coverage was satisfied: **4/4** in rejection-state preservation, **1/1** in accepted full-capacity boundary, **1/1** in registry-capacity rejection, and **2/2** in full-width arithmetic. Each report also included one `UNREACHABLE` check, not a failed assertion. An independent reviewer should still inspect the full log and unreachable-check context before accepting a stronger assurance claim.
+
+**Important sequential-only limitation:** Kani warned that `atomic_cxchg` operations (used by the boot-pool permit construction) are modeled **sequentially**; Kani 0.68.0 does not establish concurrent atomic linearizability here. The proof therefore assumes a single bootstrap thread, consistent with this research milestone. The one-shot boot-permit's real SMP behavior, hardware frame authority and unsafe pointer provenance remain outside the proof.
+
+The initial attempt on this source checkpoint failed `rustfmt --check` because an assertion needed multiline formatting. That formatting was fixed **without changing the allocator** before the successful Kani re-run linked above. CI must be inspected on the latest PR head separately.
 
 ## Required execution and reviewer evidence
 
