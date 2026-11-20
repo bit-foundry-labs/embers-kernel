@@ -2,6 +2,9 @@
 //! Standalone host-side verification: no privileged kernel or device access.
 //! Run: kani rust-kernel/research/kani_frame_registry.rs
 #![allow(dead_code)]
+// The standalone Kani frontend may compile this file without Cargo's
+// edition-selected extern prelude; the imported production code uses core.
+extern crate core;
 
 #[path = "../src/frame_registry.rs"]
 mod frame_registry;
