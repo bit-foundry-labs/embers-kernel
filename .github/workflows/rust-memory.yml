@@ -38,6 +38,11 @@ jobs:
           (cd rust-kernel && rustfmt --edition 2021 --check research/pte_fields.rs)
           (cd rust-kernel && clippy-driver --edition=2021 --test research/pte_fields.rs -D warnings -o /tmp/embers-pte-fields-clippy)
           make rust-pte-fields-test
+      - name: Check Kani pilot source integration (not a formal proof)
+        working-directory: rust-kernel
+        run: |
+          rustfmt --edition=2021 --check research/kani_frame_registry.rs
+          rustc --edition=2021 research/kani_frame_registry.rs -o /tmp/embers-kani-frame-registry-compile
       - name: Provision QEMU and ISO tools with mirror fallback
         shell: bash
         run: bash scripts/install_qemu_ci.sh
