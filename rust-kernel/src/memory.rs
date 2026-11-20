@@ -287,7 +287,11 @@ mod tests {
         let usable = region(0x100000, 64 * PAGE_BYTES, USABLE_KIND);
         let reserved = region(0x102000, PAGE_BYTES, 1);
         let other_usable = region(0x103000, 2 * PAGE_BYTES, USABLE_KIND);
-        for map in [[usable, reserved], [reserved, usable], [usable, other_usable]] {
+        for map in [
+            [usable, reserved],
+            [reserved, usable],
+            [usable, other_usable],
+        ] {
             assert_eq!(choose_pool(&map, 16), Err(MapError::OverlappingRegions));
         }
     }
