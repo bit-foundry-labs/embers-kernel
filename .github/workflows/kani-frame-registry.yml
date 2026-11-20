@@ -7,6 +7,7 @@ on:
       - "rust-kernel/research/KANI_FRAME_REGISTRY.md"
       - "rust-kernel/research/kani_transactional_allocator.rs"
       - "rust-kernel/research/KANI_TRANSACTIONAL_ALLOCATOR.md"
+      - "rust-kernel/research/kani_transactional_negative_control.py"
       - "rust-kernel/src/frame_registry.rs"
       - "rust-kernel/src/memory.rs"
       - ".github/workflows/kani-frame-registry.yml"
@@ -38,3 +39,8 @@ jobs:
         run: |
           set -euo pipefail
           kani rust-kernel/research/kani_transactional_allocator.rs
+      - name: Confirm Kani detects a real transactional failure (isolated negative control)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 rust-kernel/research/kani_transactional_negative_control.py
