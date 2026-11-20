@@ -153,7 +153,24 @@ Sources are a curated starting set, not a systematic literature review. All repo
 | [LithOS](https://pdl.cmu.edu/ftp/BigLearning/lithos_sosp25_abs.shtml) (SOSP 2025) | GPU scheduling and workload atomization | Peer-reviewed; data-center GPU context |
 | [Nixie](https://www.usenix.org/conference/osdi26/presentation/xu-yechen), [MoonBright](https://www.usenix.org/conference/osdi26/presentation/zhang-yangyu) (OSDI 2026) | Consumer GPU temporal sharing; GPU memory management | Peer-reviewed; not portable CPU-kernel speedup claims |
 
-## 8. Research ethics, reproducibility, and contribution boundaries
+## 8. R1 initial source trace: what the allocator actually controls
+
+**Read-only checkpoint, 2026-11-20:** the following call-path inventory was checked in the `main` source at PR creation base `8fdae2bcf4e761333a211282206b08a681e8a319`. This is a targeted source trace, **not** an exhaustive whole-repository audit or proof of exclusive hardware ownership.
+
+| Step | Concrete source | Interpretation |
+| --- | --- | --- |
+| Permit / initial pool | [`memory.rs` lines 117-151](https://github.com/bit-foundry-labs/embers-kernel/blob/8fdae2bcf4e761333a211282206b08a681e8a319/rust-kernel/src/memory.rs#L117-L151), [`boot_memory.rs`](../rust-kernel/src/boot_memory.rs) | An atomic one-shot permit is consumed before selecting a pool from Limine's reported regions. It prevents normal safe-Rust re-issuance **through that permit**, not an independent privileged memory access. |
+| Boot handoff | [`main.rs` lines 237-248 and 327-385](https://github.com/bit-foundry-labs/embers-kernel/blob/8fdae2bcf4e761333a211282206b08a681e8a319/rust-kernel/src/main.rs#L327-L385) | Normal boot constructs the transactional allocator and moves it into `KernelState`; a second `initial_frame_pool()` is deliberately rejected. |
+| Numeric reservation | [`frame_registry.rs` lines 127-184](https://github.com/bit-foundry-labs/embers-kernel/blob/8fdae2bcf4e761333a211282206b08a681e8a319/rust-kernel/src/frame_registry.rs#L127-L184) | `reserve()` previews the run, validates against the local registry, advances the same pool and records the result. This is coherent bookkeeping in the current single-writer path. |
+| Low-level API exposure | [`memory.rs` lines 67-114](https://github.com/bit-foundry-labs/embers-kernel/blob/8fdae2bcf4e761333a211282206b08a681e8a319/rust-kernel/src/memory.rs#L67-L114) | A holder of a mutable `FramePool` may call `reserve_contiguous()` without the registry. This is an **API design risk for future code**, not proof of a bypass exercised by ordinary boot today. |
+| Feature-gated smoke path | [`main.rs` lines 445-460](https://github.com/bit-foundry-labs/embers-kernel/blob/8fdae2bcf4e761333a211282206b08a681e8a319/rust-kernel/src/main.rs#L445-L460), [`frame_registry.rs` lines 179-183](https://github.com/bit-foundry-labs/embers-kernel/blob/8fdae2bcf4e761333a211282206b08a681e8a319/rust-kernel/src/frame_registry.rs#L179-L183), [`frame_ledger.rs` lines 78-101](https://github.com/bit-foundry-labs/embers-kernel/blob/8fdae2bcf4e761333a211282206b08a681e8a319/rust-kernel/src/frame_ledger.rs#L78-L101) | The optional `boot-ownership-smoke` feature obtains the raw pool and claims frames for an isolated smoke ledger. It is not the default path and ledger IDs are not globally authenticated. |
+| Synthetic duplicated sources | [`kernel_state.rs` lines 32-62](https://github.com/bit-foundry-labs/embers-kernel/blob/8fdae2bcf4e761333a211282206b08a681e8a319/rust-kernel/src/kernel_state.rs#L32-L62) | Host tests intentionally create independent overlapping pools to show why numeric frame IDs alone cannot grant global authority. The unrestricted `choose_pool()` selector in `memory.rs` is `cfg(test)`, not ordinary production pool creation. |
+
+**Initial assessment:** The current single-BSP normal path is narrower than an unrestricted allocator, and the tests explicitly acknowledge that distinction. The security gap is *not* simply “two allocators currently run on normal boot.” It is that future table construction could treat a legitimate numeric reservation as proof of exclusive ownership, live mapping, zeroed content, and revocation safety, even though those properties have not been established.
+
+**R1 follow-up acceptance:** (a) inspect all direct/indirect `FramePool` and physical-memory writers, including feature combinations, `unsafe` operations and assembly; (b) map real Limine region exclusions and lifetimes; (c) model or test duplicate issuance through every permitted constructor without fabricating auth; (d) trace the lifetime of each frame into any later table mapping; (e) document which assumptions remain at the CPU and DMA layers. This follow-up remains review-only until its scope is agreed.
+
+## 9. Research ethics, reproducibility, and contribution boundaries
 
 - Do not describe the proposed design as secure, verified, faster than Linux, or AI-optimized without the appropriate implementation and reproducible evidence.
 - Preserve license notices; this document paraphrases engineering concepts and links sources, not paper text or copied code.
