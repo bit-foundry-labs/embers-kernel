@@ -1,8 +1,8 @@
 //! Bounded translation of Limine's memory map into pure-Rust frame bookkeeping.
 //! This trusts the bootloader's pointers until Embers owns page tables.
 use crate::memory::{
-    claim_boot_pool_permit, select_boot_pool, FramePool, MapError, Region, MAX_BOOT_REGIONS,
-    REQUIRED_BOOT_PAGES,
+    claim_boot_pool_permit, select_boot_pool, BootMapSnapshot, FramePool, MapError, Region,
+    MAX_BOOT_REGIONS, REQUIRED_BOOT_PAGES,
 };
 use core::ptr::{addr_of, read_volatile};
 
@@ -50,9 +50,17 @@ pub enum BootMapError {
     InvalidMap(MapError),
 }
 
-/// Select a usable physical span. Does not write frames, change CR3,
-/// validate DMA, or acquire hardware-enforced ownership.
-pub fn initial_frame_pool() -> Result<FramePool, BootMapError> {
+/// A selected numeric frame pool and the copied map that justified it.
+/// Neither member is hardware-enforced resource authority.
+pub struct BootPoolSelection {
+    pub pool: FramePool,
+    pub map: BootMapSnapshot,
+}
+
+/// Select a usable physical span and preserve the trusted handoff's map
+/// without retaining Limine-owned pointers. Does not write frames, change
+/// CR3, validate DMA, or acquire hardware-enforced ownership.
+pub fn initial_frame_pool() -> Result<BootPoolSelection, BootMapError> {
     let permit = claim_boot_pool_permit().ok_or(BootMapError::AlreadyIssued)?;
     // SAFETY: During the BSP-only handoff, Limine is the sole writer of
     // response before entry and never mutates it after transfer of control.
@@ -88,6 +96,11 @@ pub fn initial_frame_pool() -> Result<FramePool, BootMapError> {
         };
     }
 
-    select_boot_pool(permit, &regions[..count], REQUIRED_BOOT_PAGES)
-        .map_err(BootMapError::InvalidMap)
+    // Validate and select using the same copied entries before retaining
+    // them. We never keep references into bootloader-owned response memory.
+    let pool = select_boot_pool(permit, &regions[..count], REQUIRED_BOOT_PAGES)
+        .map_err(BootMapError::InvalidMap)?;
+    let map = BootMapSnapshot::from_copied_entries(regions, count)
+        .ok_or(BootMapError::InvalidCount)?;
+    Ok(BootPoolSelection { pool, map })
 }
