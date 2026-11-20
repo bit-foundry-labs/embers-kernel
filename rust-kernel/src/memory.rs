@@ -20,6 +20,34 @@ impl Region {
     };
 }
 
+/// Immutable, kernel-owned copy of Limine's boot-time region descriptions.
+///
+/// This is copied metadata, NOT proof of physical ownership, valid CPU
+/// mappings, DMA isolation, or reclamation safety. The bootloader handoff
+/// remains trusted; callers must not treat region kinds as capabilities.
+pub struct BootMapSnapshot {
+    regions: [Region; MAX_BOOT_REGIONS],
+    count: usize,
+}
+
+impl BootMapSnapshot {
+    /// Retain only the copied entries; reject malformed lengths before slicing.
+    /// This does not independently validate the region values or provenance.
+    pub fn from_copied_entries(
+        regions: [Region; MAX_BOOT_REGIONS],
+        count: usize,
+    ) -> Option<Self> {
+        if count == 0 || count > MAX_BOOT_REGIONS {
+            return None;
+        }
+        Some(Self { regions, count })
+    }
+
+    pub fn regions(&self) -> &[Region] {
+        &self.regions[..self.count]
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapError {
     EmptyMap,
