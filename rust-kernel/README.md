@@ -57,7 +57,8 @@ Rust was not installed beforehand.
 
 - Host OS: Ubuntu 26.04.1 LTS, x86_64
 - QEMU: `QEMU emulator version 10.2.1 (Debian 1:10.2.1+ds-1ubuntu3.2)` (apt)
-- Rust: `rustc 1.90.0 (1159e78c4 2025-09-14)` via Homebrew rustup and
+- Rust: `rustc 1.90.0 (1159e78c4 2025-09-14)` and
+  `cargo 1.90.0 (840b83a10 2025-07-30)` via Homebrew rustup and
   `rust-toolchain.toml`; xorriso `1.5.8.pl02` via Homebrew
 - Build commit: `db9850c23713453d2ebd450b8e910f7b51a78558`
 
@@ -70,9 +71,34 @@ Rust was not installed beforehand.
 | Headless QEMU, `-cpu max` and `-cpu qemu64` | `READY` reached; no `ERROR:` line |
 | Ctrl+C with `-serial stdio` | QEMU reported `terminating on signal 2` and exited with status `0` |
 
-The 20-line serial logs for both CPU models differ only in the reported
-addresses. They begin with `EMBERS: Rust no_std / x86_64 / boot M02` and end
-with `READY: Embers Rust no_std entry reached.`
+Serial output from the workstation run with `-cpu qemu64` follows. It is
+reproduced in full; it contains no host-specific information.
+
+    EMBERS: Rust no_std / x86_64 / boot M02
+    BOOT: Limine base revision accepted
+    BOOT: x86-64 GDT/TSS/IDT installed
+    PAGING: active four-level mode validated
+    PAGING: inherited CR3 raw = 0x000000000ff9c000
+    PAGING: root frame candidate = 0x000000000ff9c000
+    PAGING: observed BSP RSP = 0xffff80000ff94d90
+    PAGING: MAXPHYADDR bits = 0x0000000000000028
+    PAGING: maximum linear bits = 0x0000000000000030
+    PAGING: CPU protection controls active (CR0.WP, EFER.NXE, EFER.LMA)
+    ADDRESS: Limine HHDM and executable bases validated
+    ADDRESS: HHDM offset = 0xffff800000000000
+    ADDRESS: executable physical base = 0x000000000ff42000
+    ADDRESS: executable virtual base = 0xffffffff80000000
+    MEMORY: validated Limine map for physical frame accounting
+    MEMORY: frame claim 1 = 0x0000000000100000
+    MEMORY: frame claim 2 = 0x0000000000101000
+    MEMORY: remaining pages in selected span = 0x000000000000fe3c
+    MEMORY: boot reservation retained after initialization
+    READY: Embers Rust no_std entry reached.
+
+The `-cpu max` log is identical except for one line,
+`PAGING: maximum linear bits = 0x0000000000000039`, because that model
+reports 57-bit linear addresses. The kernel still validates four-level
+paging before `READY`.
 
 ## M02 tested QEMU CPU baseline (issue #9)
 
