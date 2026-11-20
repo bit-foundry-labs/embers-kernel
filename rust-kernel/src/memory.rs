@@ -238,6 +238,23 @@ mod tests {
     }
 
     #[test]
+    fn copied_boot_map_snapshot_keeps_entries_without_limine_pointers() {
+        let usable = region(0x100000, 4 * PAGE_BYTES, USABLE_KIND);
+        let reserved = region(0x300000, PAGE_BYTES, 1);
+        let mut copied = [Region::EMPTY; MAX_BOOT_REGIONS];
+        copied[0] = usable;
+        copied[1] = reserved;
+        let snapshot = BootMapSnapshot::from_copied_entries(copied, 2).unwrap();
+
+        // The snapshot owns its bytes, independent of the caller's array.
+        copied[1] = region(0x400000, PAGE_BYTES, 2);
+        assert_eq!(snapshot.regions(), &[usable, reserved]);
+        assert_eq!(snapshot.regions().get(2), None);
+        assert!(BootMapSnapshot::from_copied_entries(copied, 0).is_none());
+        assert!(BootMapSnapshot::from_copied_entries(copied, MAX_BOOT_REGIONS + 1).is_none());
+    }
+
+    #[test]
     fn concurrent_claims_have_one_winner_and_failure_consumes_permit() {
         use std::thread;
 
