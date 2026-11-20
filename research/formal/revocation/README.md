@@ -26,7 +26,17 @@ If a checked JAR already exists:
 
     TLA_TOOLS_JAR=/absolute/path/to/tla2tools.jar bash check_tlc.sh
 
-The script expects RevocationSafe to pass and RevocationBuggy to fail *specifically* on NoLateCommit. Either a missing check or an unexpected error causes CI failure. A successful Python run **does not** establish that TLC parsed and checked these files.
+The script expects RevocationSafe to pass and RevocationBuggy to fail *specifically* on NoLateCommit. It then creates three temporary **mutations of the actual safe TLA+ module**, rechecks each with the same SHA-256-verified TLC JAR, and requires the indicated invariant to fail:
+
+| Deliberately removed guard | Required TLC failure |
+| --- | --- |
+| Admission phase must still be Active | NoPostRevokeAdmission |
+| Handle generation must match the live slot | NoStaleHandleAdmission |
+| Device must be Idle before quiescence | NoEarlyReclaim |
+
+`check_mutations.py` matches exact action-scoped source snippets once; if the model changes, mutation generation fails instead of silently checking the wrong line. The run writes individual TLC counterexample logs to `.check-logs/mutant-*.log` and fails if a mutant passes, times out, or produces a different error. Run `python3 research/formal/revocation/check_mutations.py --self-test` to validate the mutation anchors **without** claiming to have run TLC.
+
+These tests show the bounded model checker remains sensitive to three particular missing guards; they do **not** prove the safe model is complete, establish a runtime Rust revocation implementation, or authenticate actual accelerator quiescence. A successful Python companion run **does not** establish that TLC parsed or checked the TLA+ files.
 
 ## Invariants modeled
 
