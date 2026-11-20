@@ -257,6 +257,12 @@ def self_test() -> None:
     assert inspect_reservations(samples, root, two_meg.__getitem__, 40) == [
         (frame, 1 << 21), (frame + PAGE, 1 << 21)
     ]
+    visited_huge = set()
+    assert inspect_reservations(
+        samples, root, two_meg.__getitem__, 40, visited_huge) == [
+        (frame, 1 << 21), (frame + PAGE, 1 << 21)
+    ]
+    assert visited_huge == {root, 0x2000, 0x3000}
     two_meg_pat = dict(cells)
     two_meg_pat[pd] = 0x1083  # 2 MiB leaf: PAT bit 12 is permitted.
     assert inspect_reservations(samples, root, two_meg_pat.__getitem__, 40) == [
