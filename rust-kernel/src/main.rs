@@ -234,7 +234,8 @@ pub extern "C" fn kernel_entry() -> ! {
     serial_write_hex(protection.linear_address_bits as u64);
     serial_write("\n");
     serial_write("PAGING: CPU protection controls active (CR0.WP, EFER.NXE, EFER.LMA)\n");
-    let state = kernel_state::KernelState::new(check_boot_memory());
+    let (frames, boot_map) = check_boot_memory();
+    let state = kernel_state::KernelState::new(frames, boot_map);
     run_kernel(state)
 }
 
@@ -324,8 +325,8 @@ fn run_kernel(state: kernel_state::KernelState<16>) -> ! {
     halt_forever()
 }
 
-fn check_boot_memory() -> frame_registry::TransactionalFrameAllocator<16> {
-    let pool = match boot_memory::initial_frame_pool() {
+fn check_boot_memory() -> (frame_registry::TransactionalFrameAllocator<16>, memory::BootMapSnapshot) {
+    let selection = match boot_memory::initial_frame_pool() {
         Ok(pool) => pool,
         Err(boot_memory::BootMapError::AlreadyIssued) => {
             serial_write("ERROR: boot frame pool already issued\n");
@@ -358,6 +359,7 @@ fn check_boot_memory() -> frame_registry::TransactionalFrameAllocator<16> {
             halt_forever()
         }
     };
+    let boot_memory::BootPoolSelection { pool, map } = selection;
     // Exercise the actual boot issuance path before handing the pool onward.
     // This software gate does not establish hardware frame ownership.
     if !matches!(
@@ -445,7 +447,7 @@ fn check_boot_memory() -> frame_registry::TransactionalFrameAllocator<16> {
     #[cfg(feature = "boot-ownership-smoke")]
     run_ownership_smoke(allocator.pool_mut());
 
-    allocator
+    (allocator, map)
 }
 
 #[cfg(feature = "boot-ownership-smoke")]
