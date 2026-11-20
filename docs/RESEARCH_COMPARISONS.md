@@ -136,16 +136,16 @@ and [fail-closed transition research #65](https://github.com/bit-foundry-labs/em
 
 ### The missing authority chain: address, reservation, mapping, lifetime
 
-**What existing Embers code proves:** \`boot_memory::initial_frame_pool\`
+**What existing Embers code proves:** `boot_memory::initial_frame_pool`
 uses Limine's reported map and a one-use safe-Rust permit;
-\`TransactionalFrameAllocator\` keeps a monotonic pool alongside a bounded
-registry; \`KernelState\` retains the allocator through the BSP handoff.
+`TransactionalFrameAllocator` keeps a monotonic pool alongside a bounded
+registry; `KernelState` retains the allocator through the BSP handoff.
 These are meaningful software controls. However, the permitted source is still
 trusted bootloader metadata, numeric owner IDs are not authenticated, and
-\`KernelState\` host tests explicitly demonstrate that independently
+`KernelState` host tests explicitly demonstrate that independently
 constructed synthetic pools can issue the same physical frame. The optional
 ownership smoke path and direct raw-pool/registry APIs are still identified as
-bypasses in \`M06E_TRANSACTIONAL_RESERVATIONS.md\`.
+bypasses in `M06E_TRANSACTIONAL_RESERVATIONS.md`.
 
 **Linux comparison:** kernel page-table documentation notes that one physical
 page can have multiple virtual mappings and that failed mapping-permission
@@ -174,7 +174,7 @@ for each link of the chain:
 allocator with a typed, non-cloneable table-frame reservation, with host
 negative tests for duplicate issuance, excluded map regions and failures
 after only part of the table has been staged. Do **not** manufacture an
-authority-bearing type around unchecked \`FrameReservation\` metadata; start
+authority-bearing type around unchecked `FrameReservation` metadata; start
 with a review of how the validated source becomes a unique live issuer.
 Pair any later actual frame zeroing and mapping construction with controlled
 QEMU checks, not just a green pure-Rust model.
