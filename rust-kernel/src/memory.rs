@@ -20,6 +20,31 @@ impl Region {
     };
 }
 
+/// Immutable, kernel-owned copy of Limine's boot-time region descriptions.
+///
+/// This is copied metadata, NOT proof of physical ownership, valid CPU
+/// mappings, DMA isolation, or reclamation safety. The bootloader handoff
+/// remains trusted; callers must not treat region kinds as capabilities.
+pub struct BootMapSnapshot {
+    regions: [Region; MAX_BOOT_REGIONS],
+    count: usize,
+}
+
+impl BootMapSnapshot {
+    /// Retain only the copied entries; reject malformed lengths before slicing.
+    /// This does not independently validate the region values or provenance.
+    pub fn from_copied_entries(regions: [Region; MAX_BOOT_REGIONS], count: usize) -> Option<Self> {
+        if count == 0 || count > MAX_BOOT_REGIONS {
+            return None;
+        }
+        Some(Self { regions, count })
+    }
+
+    pub fn regions(&self) -> &[Region] {
+        &self.regions[..self.count]
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapError {
     EmptyMap,
@@ -153,8 +178,9 @@ pub fn choose_pool(regions: &[Region], min_pages: u64) -> Result<FramePool, MapE
     select_pool(regions, min_pages)
 }
 
-/// Check the entire boot memory map, including reserved regions, before any
-/// claim. Fail closed on overlap or overflow rather than repairing ambiguity.
+/// Check every boot-map entry for invalid ranges and reject any overlap
+/// involving usable memory before issuing a frame. Limine permits overlap
+/// between non-usable entries; those ranges are never allocated here.
 fn select_pool(regions: &[Region], min_pages: u64) -> Result<FramePool, MapError> {
     if regions.is_empty() {
         return Err(MapError::EmptyMap);
@@ -177,7 +203,13 @@ fn select_pool(regions: &[Region], min_pages: u64) -> Result<FramePool, MapError
                 .base
                 .checked_add(earlier.length)
                 .ok_or(MapError::AddressOverflow)?;
-            if region.base < earlier_end && earlier.base < end {
+            // Limine permits overlaps between non-usable regions, but
+            // guarantees usable regions do not overlap any other entry.
+            // Reject overlap that could make an allocatable span ambiguous.
+            if region.base < earlier_end
+                && earlier.base < end
+                && (region.kind == USABLE_KIND || earlier.kind == USABLE_KIND)
+            {
                 return Err(MapError::OverlappingRegions);
             }
         }
@@ -207,6 +239,23 @@ mod tests {
 
     fn region(base: u64, length: u64, kind: u64) -> Region {
         Region { base, length, kind }
+    }
+
+    #[test]
+    fn copied_boot_map_snapshot_keeps_entries_without_limine_pointers() {
+        let usable = region(0x100000, 4 * PAGE_BYTES, USABLE_KIND);
+        let reserved = region(0x300000, PAGE_BYTES, 1);
+        let mut copied = [Region::EMPTY; MAX_BOOT_REGIONS];
+        copied[0] = usable;
+        copied[1] = reserved;
+        let snapshot = BootMapSnapshot::from_copied_entries(copied, 2).unwrap();
+
+        // The snapshot owns its bytes, independent of the caller's array.
+        copied[1] = region(0x400000, PAGE_BYTES, 2);
+        assert_eq!(snapshot.regions(), &[usable, reserved]);
+        assert_eq!(snapshot.regions().get(2), None);
+        assert!(BootMapSnapshot::from_copied_entries(copied, 0).is_none());
+        assert!(BootMapSnapshot::from_copied_entries(copied, MAX_BOOT_REGIONS + 1).is_none());
     }
 
     #[test]
@@ -276,12 +325,30 @@ mod tests {
     }
 
     #[test]
-    fn reserved_overlap_rejected_not_silently_skipped() {
-        let map = [
-            region(0x100000, 64 * PAGE_BYTES, 0),
-            region(0x102000, PAGE_BYTES, 1),
-        ];
-        assert_eq!(choose_pool(&map, 16), Err(MapError::OverlappingRegions));
+    fn usable_overlap_is_rejected_in_any_entry_order() {
+        let usable = region(0x100000, 64 * PAGE_BYTES, USABLE_KIND);
+        let reserved = region(0x102000, PAGE_BYTES, 1);
+        let other_usable = region(0x103000, 2 * PAGE_BYTES, USABLE_KIND);
+        for map in [
+            [usable, reserved],
+            [reserved, usable],
+            [usable, other_usable],
+        ] {
+            assert_eq!(choose_pool(&map, 16), Err(MapError::OverlappingRegions));
+        }
+    }
+
+    #[test]
+    fn overlapping_nonusable_regions_do_not_poison_valid_usable_memory() {
+        // A conforming Limine map may overlap non-usable region types.
+        let reserved = region(0x100000, 8 * PAGE_BYTES, 1);
+        let acpi = region(0x104000, 8 * PAGE_BYTES, 2);
+        let usable = region(0x200000, 32 * PAGE_BYTES, USABLE_KIND);
+
+        for map in [[reserved, acpi, usable], [usable, acpi, reserved]] {
+            let mut pool = choose_pool(&map, 16).unwrap();
+            assert_eq!(pool.claim(), Some(0x200000));
+        }
     }
 
     #[test]
