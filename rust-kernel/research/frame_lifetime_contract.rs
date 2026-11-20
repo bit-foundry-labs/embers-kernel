@@ -29,7 +29,9 @@ impl FrameSpan {
         if start < MIN_FRAME_ADDRESS || start % PAGE_BYTES != 0 || pages == 0 {
             return Err(GateError::InvalidRange);
         }
-        let size = pages.checked_mul(PAGE_BYTES).ok_or(GateError::InvalidRange)?;
+        let size = pages
+            .checked_mul(PAGE_BYTES)
+            .ok_or(GateError::InvalidRange)?;
         start.checked_add(size).ok_or(GateError::InvalidRange)?;
         Ok(Self { start, pages })
     }
@@ -119,11 +121,7 @@ impl FrameRecord {
 
     /// A host model of required ordering, NOT an authorization to modify RAM.
     /// Failed steps return an error and leave the original record unchanged.
-    pub fn advance(
-        self,
-        step: ProposedStep,
-        evidence: ClaimedEvidence,
-    ) -> Result<Self, GateError> {
+    pub fn advance(self, step: ProposedStep, evidence: ClaimedEvidence) -> Result<Self, GateError> {
         let (expected, next, sufficient) = match step {
             ProposedStep::Reserve => (
                 Phase::Candidate,
@@ -306,7 +304,9 @@ mod tests {
             record.advance(ProposedStep::Retire, ClaimedEvidence::default()),
             Err(GateError::EvidenceMissing)
         );
-        record = record.advance(ProposedStep::Retire, full_evidence()).unwrap();
+        record = record
+            .advance(ProposedStep::Retire, full_evidence())
+            .unwrap();
         assert_eq!(record.phase, Phase::Retired);
 
         for missing in 0..3 {
@@ -321,7 +321,9 @@ mod tests {
                 Err(GateError::EvidenceMissing)
             );
         }
-        record = record.advance(ProposedStep::Quarantine, full_evidence()).unwrap();
+        record = record
+            .advance(ProposedStep::Quarantine, full_evidence())
+            .unwrap();
         assert_eq!(record.phase, Phase::Quarantined);
         for step in [
             ProposedStep::Reserve,
@@ -330,7 +332,10 @@ mod tests {
             ProposedStep::Retire,
             ProposedStep::Quarantine,
         ] {
-            assert_eq!(record.advance(step, full_evidence()), Err(GateError::WrongPhase));
+            assert_eq!(
+                record.advance(step, full_evidence()),
+                Err(GateError::WrongPhase)
+            );
         }
     }
 
@@ -343,7 +348,9 @@ mod tests {
             IntendedUse::TransitionStack,
         )
         .unwrap();
-        let reserved = stack.advance(ProposedStep::Reserve, full_evidence()).unwrap();
+        let reserved = stack
+            .advance(ProposedStep::Reserve, full_evidence())
+            .unwrap();
         assert_eq!(reserved.intended_use, IntendedUse::TransitionStack);
         assert_eq!(reserved.phase, Phase::Reserved);
     }
