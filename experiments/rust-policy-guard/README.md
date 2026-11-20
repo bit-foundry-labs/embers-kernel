@@ -12,6 +12,15 @@ Test: `cargo test` in this directory.
 - Epoch expiry and replay rejection
 - Model absence produces baseline fallback, independent of model inference
 - Simplified sum of CPU minimum requests cannot exceed an epoch's available capacity
+- A rejected proposal leaves the gate's replay state unchanged, so the next valid proposal is still accepted
+- Accepted advice is exactly the proposed tenant, weight and pages, never a widened or clamped value
+- Multi-tenant CPU minimums are admitted at exact capacity, rejected one tick over, and rejected rather than wrapped on `u32` overflow
+
+The policy-gate and admission properties are also checked exhaustively over fixed boundary values: two tenants; epochs around the replay and expiry limits, including `u64::MAX`; weights and page counts at 0, at the limit, one past it and at the type maximum; and up to three tenants with small tick counts. These deterministic tests need no dependencies. They cover only the enumerated values and are not a proof over all inputs.
+
+## Admission validation is not scheduler fairness
+
+`PolicyGate` decides only whether a proposal falls within a simulated authority. `admit_minimums` decides only whether a set of minimum reservations fits the capacity left after a system reserve in one simplified single-CPU epoch. Neither delivers CPU time, bounds latency, prevents starvation, accounts for preemption, interrupts or context-switch overhead, or models more than one CPU. A real scheduler must enforce budgets at run time and needs its own tests or proofs of those properties; passing admission here establishes none of them.
 
 Next: scheduler runtime fairness, capability handle generations, IPC, fault injection, and formal property harnesses.
 
