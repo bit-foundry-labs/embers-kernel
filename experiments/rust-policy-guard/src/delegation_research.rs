@@ -54,7 +54,10 @@ impl Budget {
 
     fn debit(self, request: Self) -> Self {
         // All callers first check fits(), so both subtractions are in range.
-        Self::new(self.cpu_ticks - request.cpu_ticks, self.pages - request.pages)
+        Self::new(
+            self.cpu_ticks - request.cpu_ticks,
+            self.pages - request.pages,
+        )
     }
 
     fn allowed_by(self, rights: Rights) -> bool {
@@ -225,7 +228,10 @@ fn delegated_rights_and_budgets_are_attenuated() {
         .unwrap();
     assert_eq!(table.grant(grandchild, 3).unwrap().parent, Some(child));
     assert_eq!(table.grant(child, 2).unwrap().remaining, Budget::new(15, 0));
-    assert_eq!(table.grant(Slot(0), 1).unwrap().remaining, Budget::new(70, 10));
+    assert_eq!(
+        table.grant(Slot(0), 1).unwrap().remaining,
+        Budget::new(70, 10)
+    );
     assert_eq!(
         table.delegate(child, 2, 4, Rights::MEMORY, Budget::new(0, 1)),
         Err(Denied::RightsAmplification)
@@ -240,10 +246,22 @@ fn delegated_rights_and_budgets_are_attenuated() {
 fn siblings_and_parent_charge_share_one_finite_budget() {
     let mut table = GrantTable::<5>::root(1, Rights::ALL, Budget::new(100, 10)).unwrap();
     table
-        .delegate(Slot(0), 1, 2, Rights::CPU | Rights::MEMORY, Budget::new(40, 3))
+        .delegate(
+            Slot(0),
+            1,
+            2,
+            Rights::CPU | Rights::MEMORY,
+            Budget::new(40, 3),
+        )
         .unwrap();
     table
-        .delegate(Slot(0), 1, 3, Rights::CPU | Rights::MEMORY, Budget::new(50, 5))
+        .delegate(
+            Slot(0),
+            1,
+            3,
+            Rights::CPU | Rights::MEMORY,
+            Budget::new(50, 5),
+        )
         .unwrap();
     table.charge(Slot(0), 1, Budget::new(10, 2)).unwrap();
     let before = table.clone();
@@ -351,13 +369,7 @@ fn exhaustive_small_sibling_sums_never_exceed_root_budget() {
                         GrantTable::<3>::root(1, Rights::ALL, Budget::new(4, 4)).unwrap();
                     let rights = Rights::CPU | Rights::MEMORY;
                     table
-                        .delegate(
-                            Slot(0),
-                            1,
-                            2,
-                            rights,
-                            Budget::new(first_cpu, first_pages),
-                        )
+                        .delegate(Slot(0), 1, 2, rights, Budget::new(first_cpu, first_pages))
                         .unwrap();
                     let second = table.delegate(
                         Slot(0),
