@@ -153,8 +153,9 @@ pub fn choose_pool(regions: &[Region], min_pages: u64) -> Result<FramePool, MapE
     select_pool(regions, min_pages)
 }
 
-/// Check the entire boot memory map, including reserved regions, before any
-/// claim. Fail closed on overlap or overflow rather than repairing ambiguity.
+/// Check every boot-map entry for invalid ranges and reject any overlap
+/// involving usable memory before issuing a frame. Limine permits overlap
+/// between non-usable entries; those ranges are never allocated here.
 fn select_pool(regions: &[Region], min_pages: u64) -> Result<FramePool, MapError> {
     if regions.is_empty() {
         return Err(MapError::EmptyMap);
