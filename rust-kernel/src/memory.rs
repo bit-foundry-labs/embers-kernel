@@ -2,6 +2,7 @@
 pub const PAGE_BYTES: u64 = 4096;
 pub const MIN_PHYSICAL_ADDRESS: u64 = 0x0010_0000;
 pub const USABLE_KIND: u64 = 0;
+pub const BOOTLOADER_RECLAIMABLE_KIND: u64 = 5;
 pub const MAX_BOOT_REGIONS: usize = 128;
 pub const REQUIRED_BOOT_PAGES: u64 = 16;
 
@@ -153,9 +154,10 @@ pub fn choose_pool(regions: &[Region], min_pages: u64) -> Result<FramePool, MapE
     select_pool(regions, min_pages)
 }
 
-/// Check every boot-map entry for invalid ranges and reject any overlap
-/// involving usable memory before issuing a frame. Limine permits overlap
-/// between non-usable entries; those ranges are never allocated here.
+/// Check every boot-map entry before issuing a frame. The Limine protocol
+/// guarantees that usable and bootloader-reclaimable regions are disjoint
+/// from every other entry. Other non-usable entries may overlap each other;
+/// only usable entries are eligible for frame selection.
 fn select_pool(regions: &[Region], min_pages: u64) -> Result<FramePool, MapError> {
     if regions.is_empty() {
         return Err(MapError::EmptyMap);
@@ -178,12 +180,14 @@ fn select_pool(regions: &[Region], min_pages: u64) -> Result<FramePool, MapError
                 .base
                 .checked_add(earlier.length)
                 .ok_or(MapError::AddressOverflow)?;
-            // Limine permits overlaps between non-usable regions, but
-            // guarantees usable regions do not overlap any other entry.
-            // Reject overlap that could make an allocatable span ambiguous.
+            // Both USABLE (0) and BOOTLOADER_RECLAIMABLE (5) must be
+            // disjoint from every entry, per Limine's memory-map contract.
             if region.base < earlier_end
                 && earlier.base < end
-                && (region.kind == USABLE_KIND || earlier.kind == USABLE_KIND)
+                && (region.kind == USABLE_KIND
+                    || earlier.kind == USABLE_KIND
+                    || region.kind == BOOTLOADER_RECLAIMABLE_KIND
+                    || earlier.kind == BOOTLOADER_RECLAIMABLE_KIND)
             {
                 return Err(MapError::OverlappingRegions);
             }
@@ -291,6 +295,23 @@ mod tests {
             [usable, reserved],
             [reserved, usable],
             [usable, other_usable],
+        ] {
+            assert_eq!(choose_pool(&map, 16), Err(MapError::OverlappingRegions));
+        }
+    }
+
+    #[test]
+    fn bootloader_reclaimable_overlap_is_rejected_in_any_entry_order() {
+        let reclaimable = region(0x100000, 8 * PAGE_BYTES, BOOTLOADER_RECLAIMABLE_KIND);
+        let reserved = region(0x104000, 8 * PAGE_BYTES, 1);
+        let other_reclaimable = region(0x102000, 8 * PAGE_BYTES, BOOTLOADER_RECLAIMABLE_KIND);
+        let usable = region(0x200000, 32 * PAGE_BYTES, USABLE_KIND);
+
+        for map in [
+            [reclaimable, reserved, usable],
+            [reserved, reclaimable, usable],
+            [reclaimable, other_reclaimable, usable],
+            [usable, reserved, reclaimable],
         ] {
             assert_eq!(choose_pool(&map, 16), Err(MapError::OverlappingRegions));
         }
