@@ -1,6 +1,6 @@
 # Kani pilot: frame-registry rejection and overlap invariants
 
-**Status (2026-11-20):** Experimental, proposed verification harnesses. These have **not** been executed with Kani by the authoring assistant. No successful proof result or counterexample is claimed. The ordinary Rust compile/format CI step, if green, checks source integration but **does not run the Kani verifier**.
+**Status (2026-11-20):** Experimental, proposed verification harnesses. A separate, read-only [Kani CI workflow](../../.github/workflows/kani-frame-registry.yml) now attempts the actual bounded verification using pinned Kani 0.68.0. **No proof result is claimed until its exact-head run completes and the assertion, coverage, and unwinding reports are inspected.** Ordinary Rust compile/format CI still checks source integration only.
 
 This pilot checks the **actual** `FrameRegistry::reserve` implementation in [`src/frame_registry.rs`](../src/frame_registry.rs), which is used by the normal `TransactionalFrameAllocator::reserve` path. It is intentionally the first, smaller proof obligation rather than a claim about the entire transactional allocator.
 
