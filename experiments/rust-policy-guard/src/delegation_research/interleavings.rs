@@ -305,10 +305,7 @@ fn interior_retirement_is_rejected_until_descendants_are_retired() {
         )
         .unwrap();
     let before = model.clone();
-    assert_eq!(
-        model.retire_for_fixture(child, 2),
-        Err(Error::LiveChildren)
-    );
+    assert_eq!(model.retire_for_fixture(child, 2), Err(Error::LiveChildren));
     assert_eq!(model, before);
     assert_eq!(
         model.checked_grant(grandchild, 3).unwrap().parent,
