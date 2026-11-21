@@ -331,6 +331,40 @@ mod tests {
     }
 
     #[test]
+    fn limine_kind_numbers_are_pinned_to_the_protocol() {
+        // Literal kinds, not the module constants: a wrong constant must fail.
+        // Limine lets executable/modules (6) overlap; reclaimable (5) never may.
+        let reserved = region(0x100000, 8 * PAGE_BYTES, 1);
+        let usable = region(0x200000, 32 * PAGE_BYTES, 0);
+        let modules = region(0x104000, 8 * PAGE_BYTES, 6);
+        let reclaimable = region(0x104000, 8 * PAGE_BYTES, 5);
+        assert_eq!(
+            choose_pool(&[reserved, modules, usable], 16)
+                .unwrap()
+                .claim(),
+            Some(0x200000)
+        );
+        assert_eq!(
+            choose_pool(&[reserved, reclaimable, usable], 16),
+            Err(MapError::OverlappingRegions)
+        );
+    }
+
+    #[test]
+    fn touching_entries_are_not_overlaps_in_any_entry_order() {
+        let reclaimable = region(0x100000, 4 * PAGE_BYTES, 5);
+        let reserved_low = region(0x104000, PAGE_BYTES, 1);
+        let usable = region(0x200000, 32 * PAGE_BYTES, 0);
+        let reserved_high = region(0x220000, PAGE_BYTES, 1);
+        for map in [
+            [reclaimable, reserved_low, usable, reserved_high],
+            [reserved_low, reclaimable, reserved_high, usable],
+        ] {
+            assert_eq!(choose_pool(&map, 16).unwrap().claim(), Some(0x200000));
+        }
+    }
+
+    #[test]
     fn adjacent_regions_are_not_overlapping() {
         let map = [
             region(0x100000, 16 * PAGE_BYTES, 0),
