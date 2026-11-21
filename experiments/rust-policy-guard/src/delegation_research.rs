@@ -3,6 +3,9 @@
 //! Not kernel authority: caller IDs are supplied by tests, slots are not
 //! protected, and no CPU time or physical memory is actually allocated.
 
+#[cfg(test)]
+mod interleavings;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Rights(u8);
 
