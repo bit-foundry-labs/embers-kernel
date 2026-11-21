@@ -31,7 +31,6 @@ Reviewers should say **“not established”** when evidence is insufficient. Re
 - **Request recognition when ready:** Use the [community-role interest issue](https://github.com/bit-foundry-labs/embers-kernel/issues/new?template=role_interest.md) with links to representative reviews. A maintainer may request further evidence or suggest another bounded review. There is no automatic promotion or fixed response deadline.
 - **Document an accepted role:** With the volunteer's consent, record reviewer recognition, focus area, and decision in a public governance change before describing them as an appointed reviewer. Do not publish a roster entry or change GitHub permissions solely because an interest issue was opened.
 
-
 ## How someone could later become a maintainer
 
 Maintainer responsibilities are more demanding than reviewing. When the project needs additional coverage, an existing maintainer may invite a contributor who has demonstrated sustained technical judgment, dependable communication, review of others' changes, and competence in the relevant subsystem. A volunteer can register future interest through the same issue template, but a public application does **not** initiate an automatic access grant.
