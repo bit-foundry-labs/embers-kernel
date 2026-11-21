@@ -2,6 +2,9 @@
 #![forbid(unsafe_code)]
 //! Research model, NOT an implemented kernel capability table or scheduler.
 
+#[cfg(test)]
+mod delegation_research;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Tenant(pub u32);
 
