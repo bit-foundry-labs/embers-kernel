@@ -24,6 +24,14 @@ A public GitHub user can provide technical review feedback without repository wr
 
 Reviewers should say **“not established”** when evidence is insufficient. Rejecting an unsafe change, discovering a reproducible negative path, or refining a threat model counts as useful work. They do not have to approve code to contribute.
 
+### Starting and following up on a review
+
+- **Find a current question:** Use the [M06 integration queue](https://github.com/bit-foundry-labs/embers-kernel/issues/110) or [open pull requests](https://github.com/bit-foundry-labs/embers-kernel/pulls?q=is%3Apr+is%3Aopen). Review targets change as PRs merge; check the live state first.
+- **Leave a useful record:** Cite the specific commit, code location or assumption; describe what you inspected, tests you ran (or did not run), and any unverified hardware behavior. A public comment is a contribution even if no code changes are proposed.
+- **Request recognition when ready:** Use the [community-role interest issue](https://github.com/bit-foundry-labs/embers-kernel/issues/new?template=role_interest.md) with links to representative reviews. A maintainer may request further evidence or suggest another bounded review. There is no automatic promotion or fixed response deadline.
+- **Document an accepted role:** With the volunteer's consent, record reviewer recognition, focus area, and decision in a public governance change before describing them as an appointed reviewer. Do not publish a roster entry or change GitHub permissions solely because an interest issue was opened.
+
+
 ## How someone could later become a maintainer
 
 Maintainer responsibilities are more demanding than reviewing. When the project needs additional coverage, an existing maintainer may invite a contributor who has demonstrated sustained technical judgment, dependable communication, review of others' changes, and competence in the relevant subsystem. A volunteer can register future interest through the same issue template, but a public application does **not** initiate an automatic access grant.
