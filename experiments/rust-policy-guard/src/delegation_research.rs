@@ -392,3 +392,37 @@ fn exhaustive_small_sibling_sums_never_exceed_root_budget() {
         }
     }
 }
+
+#[test]
+fn partial_amplification_and_late_rejections_leave_table_unchanged() {
+    let mut table = GrantTable::<4>::root(1, Rights::ALL, Budget::new(20, 4)).unwrap();
+    let child = table
+        .delegate(
+            Slot(0),
+            1,
+            2,
+            Rights::CPU | Rights::DELEGATE,
+            Budget::new(10, 0),
+        )
+        .unwrap();
+    let leaf = table
+        .delegate(child, 2, 3, Rights::CPU, Budget::new(2, 0))
+        .unwrap();
+    let before = table.clone();
+
+    // CPU was retained but MEMORY was stripped. The budget fits, and a slot
+    // is free: only the subset check may reject this mixed-rights request.
+    assert_eq!(
+        table.delegate(child, 2, 4, Rights::CPU | Rights::MEMORY, Budget::new(1, 0)),
+        Err(Denied::RightsAmplification)
+    );
+    assert_eq!(
+        table.delegate(leaf, 3, 4, Rights::CPU, Budget::new(1, 0)),
+        Err(Denied::MissingDelegateRight)
+    );
+    assert_eq!(
+        table.charge(child, 2, Budget::new(0, 0)),
+        Err(Denied::EmptyBudget)
+    );
+    assert_eq!(table, before);
+}
