@@ -25,7 +25,7 @@ The host model in [`research/frame_lifetime_contract.rs`](research/frame_lifetim
 | **Retired** | No new references may be acquired; old active use is ending, but existing CPU/device references may remain | Retired does not mean free or safe to overwrite |
 | **Quarantined** | Asserted CPU translation quiescence, device translation quiescence, and drained references | Even this host state has **no release or reuse operation**; actual revocation needs a separate implementation and review |
 
-Every `advance()` rejects the wrong phase **before** considering evidence and leaves the original record unchanged if a guard is missing. Numeric span construction rejects arithmetic overflow, unaligned addresses and overlap against the supplied exclusions. No method turns a quarantined record back into a candidate or issues a Rust pointer.
+Every `advance()` rejects the wrong phase **before** considering evidence and leaves the original record unchanged if a guard is missing. Numeric span construction rejects arithmetic overflow, unaligned addresses and overlap against the supplied exclusions. No `advance()` step turns a quarantined record back into a candidate, and the model issues no Rust pointer. However, `FrameRecord` has public fields and is `Copy`: callers can construct or alter a record's phase or retain earlier copies. The API therefore does not enforce monotonicity, unique ownership, irreversible quarantine, or prevention of reuse.
 
 **All `ClaimedEvidence` fields are deliberately caller-forgeable and untrusted.** This is a *requirements model*, not the future runtime API. The real implementation must replace each boolean with proven/enforced invariants tied to the sole allocator, actual translations and memory ownership. It must not wire this toy model into the boot path or let an AI/policy agent supply trusted proof flags.
 
@@ -49,9 +49,9 @@ clippy-driver --edition=2021 --test research/frame_lifetime_contract.rs -D warni
 /tmp/embers-m06-lifetime-gate --nocapture
 ```
 
-Tests cover rejected invalid ranges, non-usable inputs, overlaps, missing sole issuer, skipped phases, each missing initialization/mapping requirement, each absent activation-survival obligation, rejected early retirement, and each missing CPU/device/reference quiescence condition. The model has **no path to release or recycle**, including after quarantine.
+Tests cover rejected invalid ranges, non-usable inputs, overlaps, missing sole issuer, skipped phases, each missing initialization/mapping requirement, each absent activation-survival obligation, rejected early retirement, and each missing CPU/device/reference quiescence condition. The model has no release-to-free operation, but its public, copyable records do not enforce non-reuse or irreversible quarantine.
 
-**These are host contract tests, not Kani proofs or live x86-64 security tests.** A green memory/QEMU CI suite confirms no observed regression on its tested profiles, not a verified physical-frame authority design. The proposed gate is a *review checklist that fails closed* until it can be grounded in concrete evidence.
+**These are host contract tests, not Kani proofs or live x86-64 security tests.** A green memory/QEMU CI suite confirms no observed regression on its tested profiles, not a verified physical-frame authority design. The proposed gate is a *review checklist*; only calls to `advance()` with missing evidence or an unexpected phase fail closed.
 
 ## External primary research
 
@@ -62,8 +62,8 @@ Tests cover rejected invalid ranges, non-usable inputs, overlaps, missing sole i
 ## Review/acceptance gates
 
 - [ ] Exact-head standalone formatting/Clippy/host tests plus required normal boot, exception, and both QEMU CPU profiles pass.
-- [ ] Independently inspect **no runtime use**, code duplication, numeric overflow/overlap logic, missing stage gates and the irreversibility of quarantine.
+- [ ] Independently inspect **no runtime use**, code duplication, numeric overflow/overlap logic, missing stage gates and the limits of quarantine within the `advance()` API.
 - [ ] Confirm bootloader storage cannot accidentally be classified as free or reused; current host model trusts its supplied Limine kind and exclusions, **so no security claim is allowed**.
 - [ ] Recheck external protocol details and document any mismatch between real hardware evidence and the model's hypothetical inputs.
-- [ ] Do not merge as a substitute for outstanding PR #81/#83 independent [M06 review issue #84](https://github.com/bit-foundry-labs/embers-kernel/issues/84).
+- [ ] [Issue #84](https://github.com/bit-foundry-labs/embers-kernel/issues/84) is closed after the #81/#83 read-only review; the active pre-write ownership, mapping and lifetime gate remains [issue #110](https://github.com/bit-foundry-labs/embers-kernel/issues/110). Neither that review nor this model authorizes privileged memory changes.
 - [ ] No live memory writes, stack switch or CR3 change until independently authorized in a **different** PR.
