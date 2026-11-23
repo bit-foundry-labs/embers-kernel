@@ -20,11 +20,13 @@ impl Region {
     };
 }
 
-/// Immutable, kernel-owned copy of Limine's boot-time region descriptions.
+/// Immutable copy of Limine's boot-time region descriptions.
 ///
 /// This is copied metadata, NOT proof of physical ownership, valid CPU
 /// mappings, DMA isolation, or reclamation safety. The bootloader handoff
 /// remains trusted; callers must not treat region kinds as capabilities.
+/// Entries other than kinds 0 and 5 may overlap; this is not a disjoint
+/// partition. Construction checks the count, not whether selection validated it.
 pub struct BootMapSnapshot {
     regions: [Region; MAX_BOOT_REGIONS],
     count: usize,
@@ -249,6 +251,11 @@ mod tests {
         assert_eq!(snapshot.regions().get(2), None);
         assert!(BootMapSnapshot::from_copied_entries(copied, 0).is_none());
         assert!(BootMapSnapshot::from_copied_entries(copied, MAX_BOOT_REGIONS + 1).is_none());
+        assert_eq!(
+            BootMapSnapshot::from_copied_entries(copied, MAX_BOOT_REGIONS)
+                .map(|s| s.regions().len()),
+            Some(MAX_BOOT_REGIONS)
+        );
     }
 
     #[test]
