@@ -1,6 +1,6 @@
 # Unsafe boundaries in the early Rust kernel
 
-**Audit scope:** Early Rust boot, memory, paging-state, QEMU-only permission faults and experimental stack paths, reviewed against `main` at `ab5fe78b8c430e6c8e9a990542994a775c21963e` (through merged #77). Recheck this inventory whenever feature gates or the privileged boot boundary changes.
+**Audit scope:** This source-level inventory covers early Rust boot, memory, paging-state observations, QEMU-only permission faults, and experimental stack paths. Its original detailed audit was anchored to `ab5fe78b8c430e6c8e9a990542994a775c21963e` (through merged #77). For this update, the stated assumptions were compared with `main` at `59ceb3f00bd36726b04b335086913e0bfb444428` in `main.rs`, `arch.rs`, `boot_memory.rs`, `boot_addresses.rs`, `paging_mode.rs`, `transition_stack.rs`, and the feature-gated fault paths. This bounded source inspection does not establish a comprehensive re-audit, independently rerun tests, or prove those unsafe operations safe. Recheck this snapshot whenever the privileged boot boundary changes.
 
 **Status:** Source-level inventory, not formal verification or proof that external pointers and hardware state are safe. The companion host-only PTE field tests are pure numerical models; no privileged code or page tables are changed. Follow the function names rather than line numbers.
 
@@ -31,15 +31,22 @@ The current execution model is one bootstrap CPU (BSP), CPL0, interrupts disable
 | [`paging_mode.rs::check_active`](src/paging_mode.rs) | The BSP is at CPL0 in x86-64 long mode before using read-only `mov` from CR0/CR4. | Invalid privilege or hardware handoff can fault. Selected bits alone do not establish PTE reservation, physical width or table ownership. | QEMU `qemu64` and `max` boot plus pure host bit tests; no hardware-independent proof. |
 | [`paging_mode.rs::sample_active_context`](src/paging_mode.rs) | CPL0, active Limine page tables and an initialized stack; read-only `mov` from CR3 and RSP in a single BSP. | RSP is sampled inside the function, not the Limine entry point; masking CR3 **discards control/reserved-bit context** and produces only a numeric root candidate. | QEMU register serial checks and paused host-side PTE observations; **no** proof of root frame ownership, whole-stack lifetime or all reserved bits. |
 | [`transition_stack.rs::probe_inherited_mappings`](src/transition_stack.rs) | Only the `transition-stack-smoke` feature, single BSP, interrupts disabled and a private aligned BSS buffer under writable Limine mappings. `static mut` is accessed through raw pointers without creating Rust references. | A missing page can fault the opt-in QEMU guest. The probe restores sampled bytes but does not establish effective security protections, alias freedom or safety after a root switch. | Feature-only volatile smoke and read-only QMP snapshots of four pages on both CPU profiles; **not** a live stack switch, device isolation or lifetime proof. |
-
 | [`paging_mode.rs::sample_protection_state`](src/paging_mode.rs) (PR #74) | Requires a single CPL0 BSP, a valid Limine long-mode handoff and supported extended CPUID leaves. It queries advertised NX and physical/linear widths, then reads CR0 and IA32_EFER via `RDMSR`; no control register or MSR writes occur. | A missing CPUID feature or WP/NXE/LMA bit is rejected; an invalid privilege or MSR assumption may fault. A width or active-bit sample cannot authenticate page-table contents or effective permissions. | Pure Rust validators, Python serial rejection fixtures and both QEMU CPU profiles on the reviewed #74 branch. **Untested:** non-QEMU processors, reserved PTE bits, all CPUID vendor edge cases, effective fault-based permission enforcement. |
-
 | [`permission_fault.rs::trigger_supervisor_write`](src/permission_fault.rs) (feature-only) | CPL0 BSP, CR0.WP enabled, private page aligned immutable static placed in the ELF R segment and mapped read-only by Limine. Attempted store is deliberate QEMU fault injection. | If write protection is absent, one private canary byte is modified; the code emits an error and halts. A missing page or other fault type is rejected by the test parser. | Separate `fault-ro-write` QEMU boot, exact #PF error-code and CR2 checking; **not** production-safe write handling or physical ownership. |
 | [`permission_fault.rs::trigger_instruction_fetch`](src/permission_fault.rs) (feature-only) | CPL0 BSP, EFER.NXE enabled and a private page-aligned static in the ELF RW/NX load segment. Indirect jump deliberately attempts an instruction fetch; embedded `UD2` is a fail-closed canary if execution succeeds. | An unexpected instruction fetch yields #UD or another exception, not the required #PF; no handler recovery is possible. | Separate `fault-nx-exec` QEMU boot, exact #PF error-code, CR2 and RIP match; **not** global executable-permission or DMA proof. |
 
 **Audit scope note:** CPU protection preflight (#74), selected live MAXPHYADDR checks (#77), and these QEMU-only fault experiments remain distinct evidence layers. They do **not** collectively certify the inherited hierarchy or authorize a new CR3 root.
 
 **No page-table writer:** The QMP scripts read guest physical table entries from the **host** while QEMU is paused; they do not dereference unvalidated physical pointers in kernel mode. The `research/pte_fields.rs` helper checks only caller-supplied MAXPHYADDR/NXE against a small 4 KiB field subset. It cannot prove live CPU protections, ownership, alias freedom, or safe `CR3` switching.
+
+## Review findings for future work
+
+- **Bootloader pointer provenance remains a trust assumption.** Null and count checks are useful but do not make arbitrary nonnull pointers safe to dereference. The current boot path assumes a correctly behaving Limine handoff; any future hostile-input boundary requires a separate design and validation strategy.
+- **Privileged descriptor setup is BSP-only.** `arch.rs::install` initializes shared static GDT/TSS/IDT state under an exclusive early-boot assumption. Enabling SMP requires per-CPU ownership and concurrent initialization review; enabling interrupts, even on one CPU, requires reentrancy and initialization-order analysis. Neither transition is made safe simply by removing `unsafe` keywords.
+- **CPU feature and paging-state sampling is observational.** Read-only control-register/MSR operations do not establish effective mapping permissions, DMA isolation, or page-table ownership.
+- **Fault injection must remain feature-gated.** Exception and permission tests intentionally crash disposable QEMU guests and must not be mistaken for normal boot or production recovery behavior.
+
+These are documented limitations and review gates, **not newly confirmed vulnerabilities**.
 
 ## Trusted data vs. actual authority
 
@@ -73,7 +80,7 @@ make rust-pte-fields-test
 make rust-iso
 ```
 
-The repository's M02, M03 and M04/M05 GitHub Actions workflows additionally run QEMU normal/fault/ownership-smoke checks. The local audit environment used to prepare this document did **not** have `cargo`, `rustc`, or `qemu-system-x86_64`; therefore **no local Rust build or emulator result is claimed**. Evaluate the PR checks independently, and do not treat passing CI as exhaustive proof.
+The repository's M02, M03 and M04/M05 GitHub Actions workflows additionally run QEMU normal/fault/ownership-smoke checks. This documentation change is based on source inspection; **no local Rust build or emulator result is claimed for this update**. Evaluate the PR checks independently, and do not treat passing CI as exhaustive proof.
 
 ## Review triggers
 

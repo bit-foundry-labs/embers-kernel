@@ -1,6 +1,6 @@
 # M06t: observed reserved-frame disjointness from inherited paging-structure pages
 
-**Status:** A read-only, host-side QEMU **observation**, stacked on [M06r PR #83](https://github.com/bit-foundry-labs/embers-kernel/pull/83). **No guest writes, ownership transfer, stack switch, or CR3 replacement.** Any claim below is limited to the exact build, paused guest, observed inherited CR3, and the table-entry paths actually traversed.
+**Status:** A read-only, host-side QEMU **observation**, extending the merged [M06r PR #83](https://github.com/bit-foundry-labs/embers-kernel/pull/83). **No guest writes, ownership transfer, stack switch, or CR3 replacement.** Any claim below is limited to the exact build, paused guest, observed inherited CR3, and the table-entry paths actually traversed.
 
 ## The question not answered by the existing HHDM checks
 
@@ -21,7 +21,7 @@ Pure host fixtures specifically exercise:
 - Deliberate collision where an intermediate PDE points to a candidate frame as its page-table page, even when a supposed leaf translation could otherwise look correct.
 - Existing wrong-backing, malformed PTE, supervisor permissions, MAXPHYADDR and huge-page rejection cases remain intact.
 
-**Execution:** the existing stacked M06r workflow runs `python3 scripts/check_reserved_frame_hhdm_qmp.py --self-test` and the same live checker for `--cpu qemu64` and `--cpu max` on the matching normal-boot ISO.
+**Execution:** the existing M06r workflow runs `python3 scripts/check_reserved_frame_hhdm_qmp.py --self-test` and the same live checker for `--cpu qemu64` and `--cpu max` on the matching normal-boot ISO.
 
 ## Why this is not a lifetime or isolation proof
 
@@ -33,8 +33,8 @@ Pure host fixtures specifically exercise:
 
 ## Next M06 gates, in order
 
-1. Independently review [PR #81](https://github.com/bit-foundry-labs/embers-kernel/pull/81), [PR #83](https://github.com/bit-foundry-labs/embers-kernel/pull/83), and this stacked change, keeping [issue #84](https://github.com/bit-foundry-labs/embers-kernel/issues/84) current. Recheck all results if the base PR head moves.
-2. Resolve the real *authority* and *lifetime* problem: retain a validated region ledger (see draft [PR #107](https://github.com/bit-foundry-labs/embers-kernel/pull/107)); define table-frame reservation, initialization, ownership and forbidden aliasing paths; prove the dedicated stack and exception paths persist across old/new roots.
+1. Independently review this change against current main, including the already merged [PR #81](https://github.com/bit-foundry-labs/embers-kernel/pull/81) and [PR #83](https://github.com/bit-foundry-labs/embers-kernel/pull/83). Recheck the resulting commit and integration tests when the base changes.
+2. Resolve the *authority* and *lifetime* problem: build on the retained boot-map classifications from merged [PR #107](https://github.com/bit-foundry-labs/embers-kernel/pull/107), which are not physical authority or a lifetime proof; define table-frame reservation, initialization, ownership and forbidden aliasing paths; prove the dedicated stack and exception paths persist across old/new roots.
 3. Only after evidence and independent approval, design a **separate** gated table-frame zeroing and mapping experiment. The fail-closed CR3 model in [draft PR #66](https://github.com/bit-foundry-labs/embers-kernel/pull/66) does not authorize a live root switch.
 
 Primary contracts: [Limine boot protocol: memory layout, paging structures and stack](https://github.com/limine-bootloader/limine-protocol/blob/trunk/PROTOCOL.md); [Embers M06 paging transition requirements](../docs/PAGING_TRANSITION_V1.md). This research does not claim production safety or a complete page-table enumeration.

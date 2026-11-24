@@ -8,12 +8,46 @@ The former C bootstrap lives in the historical research branch PR #2.
 The Rust build reuses a linker script and checksum-pinned Limine ISO
 packaging machinery, but neither compiles nor links the C kernel.
 
+## Source and test map for contributors
+
+The executable is [`src/main.rs`](src/main.rs): it coordinates boot and diagnostics,
+while [`boot_memory.rs`](src/boot_memory.rs) reads the Limine memory map and
+[`memory.rs`](src/memory.rs) contains host-testable selection logic. The modules
+below are organized by responsibility rather than milestone number. Start with a
+host-only test for pure bookkeeping; use QEMU for boot, privileged CPU state,
+or hardware-visible behavior.
+
+| Responsibility | Source | Where to start testing |
+| --- | --- | --- |
+| Entry, diagnostics, and serial output | [`main.rs`](src/main.rs), [`serial.rs`](src/serial.rs) | `make rust-check`; `make rust-serial-test`; [Rust boot/READY workflow](../.github/workflows/rust-boot.yml) |
+| Exception descriptors and fault entry | [`arch.rs`](src/arch.rs) | [M03 exception QEMU workflow](../.github/workflows/rust-exceptions.yml) |
+| Limine memory map and frame selection | [`boot_memory.rs`](src/boot_memory.rs), [`memory.rs`](src/memory.rs) | `make rust-memory-test`; [M04 memory workflow](../.github/workflows/rust-memory.yml) |
+| Symbolic owner ledger | [`frame_ledger.rs`](src/frame_ledger.rs) (feature `boot-ownership-smoke`) | `make rust-ledger-test`; [M04 ownership smoke](../.github/workflows/rust-memory.yml) |
+| Frame reservation registry and state | [`frame_registry.rs`](src/frame_registry.rs), [`kernel_state.rs`](src/kernel_state.rs) | `make rust-frame-registry-test`; [M04 boot integration](../.github/workflows/rust-memory.yml) |
+| Boot address provenance and one-time pool gate | [`boot_addresses.rs`](src/boot_addresses.rs), [`address_provenance.rs`](src/address_provenance.rs), [`boot_pool_gate.rs`](src/boot_pool_gate.rs) | `make rust-provenance-test`; `make rust-boot-pool-gate-test` |
+| Paging and CPU protection observations | [`paging_mode.rs`](src/paging_mode.rs), [`research/`](research/) | `make rust-paging-mode-test`; `make rust-paging-research-test`; `make rust-pte-fields-test`; [Rust boot QEMU preflight](../.github/workflows/rust-boot.yml) |
+| Deliberate permission faults | [`permission_fault.rs`](src/permission_fault.rs) (features `fault-ro-write` or `fault-nx-exec`) | [M03 QEMU fault-mode workflow](../.github/workflows/rust-exceptions.yml) |
+| Experimental inherited-stack probe | [`transition_stack.rs`](src/transition_stack.rs) (feature `transition-stack-smoke`) | `make rust-transition-stack-test`; [Rust boot QEMU stack smoke](../.github/workflows/rust-boot.yml) |
+
+Host tests live in [`tests/`](tests/) and in module-local `#[cfg(test)]`
+sections. The [`research/`](research/) directory contains numerical
+page-table models; it does not implement a live page-table writer. Use
+[`UNSAFE_BOUNDARIES.md`](UNSAFE_BOUNDARIES.md) for privileged-code
+preconditions, and consult the [milestone notes](M06E_TRANSACTIONAL_RESERVATIONS.md)
+for the distinction between validated bookkeeping and enforced isolation.
+The unsafe inventory is a source-linked historical audit, not a continuously
+verified list of every later change; recheck its assumptions against current code.
+
+**Review rule:** A host test of a model cannot substitute for QEMU evidence
+when a change touches a hardware trust boundary. Conversely, a QEMU READY
+marker does not prove memory isolation or safety on physical hardware.
+
 ## Fresh Ubuntu/WSL reproduction
 
 Install rustup from https://rustup.rs and system prerequisites:
 
     sudo apt-get update
-    sudo apt-get install -y make binutils python3 qemu-system-x86 xorriso curl tar
+    sudo apt-get install -y make binutils gcc libc6-dev python3 qemu-system-x86 xorriso curl tar
     cd rust-kernel
     rustup toolchain install 1.90.0 --component clippy,rustfmt --target x86_64-unknown-none
     cd ..
@@ -30,6 +64,75 @@ Expected serial marker:
 
 The kernel intentionally stops with interrupts disabled in a halt loop.
 Stop QEMU with Ctrl+C.
+
+`gcc` and `libc6-dev` are required even though the kernel itself links
+without them: the host tests link through the system `cc`, and
+`make rust-iso` compiles the Limine `limine` utility from C. GitHub-hosted
+Ubuntu runners preinstall a C toolchain, so CI does not detect its absence.
+In a clean `ubuntu:26.04` container, the package list without them let
+`make rust-check` pass, but `make rust-memory-test`, `make rust-ledger-test`
+and `make rust-iso` failed with ``linker `cc` not found``. Adding only `gcc`
+still failed, because `Scrt1.o`, `crti.o`, `libutil` and `stdio.h` come from
+`libc6-dev`.
+
+If rustup is installed with Homebrew instead of https://rustup.rs, the formula
+is keg-only. Add `$(brew --prefix rustup)/bin` to `PATH` so that `cargo` and
+`rustc` resolve to the rustup proxies that honor `rust-toolchain.toml`.
+
+## Ubuntu 26.04 reproduction record (issue #8)
+
+This record is **emulator-only** evidence. The clean-environment check ran
+the commands above in a fresh `ubuntu:26.04` container (image digest
+`sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db`)
+with rustup from https://rustup.rs. With the updated package list, every
+command below passed, and QEMU (software emulation, `-cpu max`) reached
+`READY` with no `ERROR:` line. The table records a workstation run, where
+Rust was not installed beforehand.
+
+- Host OS: Ubuntu 26.04.1 LTS, x86_64
+- QEMU: `QEMU emulator version 10.2.1 (Debian 1:10.2.1+ds-1ubuntu3.2)` (apt)
+- Rust: `rustc 1.90.0 (1159e78c4 2025-09-14)` and
+  `cargo 1.90.0 (840b83a10 2025-07-30)` via Homebrew rustup and
+  `rust-toolchain.toml`; xorriso `1.5.8.pl02` via Homebrew
+- Build commit: `db9850c23713453d2ebd450b8e910f7b51a78558`
+
+| Command | Result |
+| --- | --- |
+| `make rust-check` | Passed |
+| `make rust-memory-test` | Passed: 16 tests |
+| `make rust-ledger-test` | Passed: 26 tests |
+| `make rust-iso` | Passed; Limine v12.9.6 SHA-256 verified |
+| Headless QEMU, `-cpu max` and `-cpu qemu64` | `READY` reached; no `ERROR:` line |
+| Ctrl+C with `-serial stdio` | QEMU reported `terminating on signal 2` and exited with status `0` |
+
+Serial output from the workstation run with `-cpu qemu64` follows. It is
+reproduced in full; it contains no host-specific information.
+
+    EMBERS: Rust no_std / x86_64 / boot M02
+    BOOT: Limine base revision accepted
+    BOOT: x86-64 GDT/TSS/IDT installed
+    PAGING: active four-level mode validated
+    PAGING: inherited CR3 raw = 0x000000000ff9c000
+    PAGING: root frame candidate = 0x000000000ff9c000
+    PAGING: observed BSP RSP = 0xffff80000ff94d90
+    PAGING: MAXPHYADDR bits = 0x0000000000000028
+    PAGING: maximum linear bits = 0x0000000000000030
+    PAGING: CPU protection controls active (CR0.WP, EFER.NXE, EFER.LMA)
+    ADDRESS: Limine HHDM and executable bases validated
+    ADDRESS: HHDM offset = 0xffff800000000000
+    ADDRESS: executable physical base = 0x000000000ff42000
+    ADDRESS: executable virtual base = 0xffffffff80000000
+    MEMORY: validated Limine map for physical frame accounting
+    MEMORY: frame claim 1 = 0x0000000000100000
+    MEMORY: frame claim 2 = 0x0000000000101000
+    MEMORY: remaining pages in selected span = 0x000000000000fe3c
+    MEMORY: boot reservation retained after initialization
+    READY: Embers Rust no_std entry reached.
+
+The `-cpu max` log is identical except for one line,
+`PAGING: maximum linear bits = 0x0000000000000039`, because that model
+reports 57-bit linear addresses. The kernel still validates four-level
+paging before `READY`.
 
 ## M02 tested QEMU CPU baseline (issue #9)
 

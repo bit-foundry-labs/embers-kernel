@@ -6,7 +6,7 @@ We're investigating what the kernel should control when applications and AI agen
 
 **This is a research effort, not a working general-purpose operating system or a benchmark-proven AI-optimized kernel.**
 
-[Contribute](CONTRIBUTING.md) · [Research roadmap](docs/CONTRIBUTOR_ROADMAP.md) · [Open issues](https://github.com/bit-foundry-labs/embers-kernel/issues) · [Contributor launch milestone](https://github.com/bit-foundry-labs/embers-kernel/issues/24)
+[Start learning](docs/learning/README.md) · [Validation Lab](https://embers-kernel-validation-lab.brittneyleighb.chatgpt.site) · [Contribute](CONTRIBUTING.md) · [Research roadmap](docs/CONTRIBUTOR_ROADMAP.md) · [Open issues](https://github.com/bit-foundry-labs/embers-kernel/issues) · [Contributor launch milestone](https://github.com/bit-foundry-labs/embers-kernel/issues/24)
 
 ## Validation Lab
 
@@ -52,7 +52,7 @@ A passing QEMU or host-test check proves only the tested milestone. It does **no
 git clone https://github.com/bit-foundry-labs/embers-kernel.git
 cd embers-kernel
 sudo apt-get update
-sudo apt-get install -y make binutils python3 qemu-system-x86 xorriso curl tar
+sudo apt-get install -y make binutils gcc libc6-dev python3 qemu-system-x86 xorriso curl tar
 cd rust-kernel
 rustup toolchain install 1.90.0 --component clippy,rustfmt --target x86_64-unknown-none
 cd ..
@@ -75,21 +75,35 @@ For the four-mode exception smoke test, see [M03 exception instructions](rust-ke
 
 The earlier C prototype remains accessible as [historical PR #2](https://github.com/bit-foundry-labs/embers-kernel/pull/2). It is **not** required to build or execute the Rust kernel.
 
-For the host-only policy experiment, check out [PR #6](https://github.com/bit-foundry-labs/embers-kernel/pull/6) and run `cargo test` in `experiments/rust-policy-guard`. That does not execute a privileged Rust kernel.
+For the host-only policy experiment now on `main`, run `cargo test` in `experiments/rust-policy-guard`. [PR #6](https://github.com/bit-foundry-labs/embers-kernel/pull/6) records its development. This experiment does not execute a privileged Rust kernel.
+
+## Learn by contributing
+
+New to kernels or Rust systems programming? Start with the [Embers Kernel Learning Lab](docs/learning/README.md): three short, evidence-based exercises on the boot path, memory ownership, and reviewing `unsafe` Rust. Browser-only source review is welcome; no privileged code changes or physical hardware are needed. See the [contributor test selection guide](CONTRIBUTING.md#run-the-right-checks-before-opening-a-pr) if you choose to run tests.
 
 ## Help build it
 
 We're looking for contributors interested in **Rust systems programming, kernel bring-up, x86-64/QEMU, capability security, IPC, concurrency, scheduling, model checking, and reproducible benchmarks**.
 
-A useful first contribution is a narrow, verifiable improvement, not a sweeping rewrite:
+Start with a narrow, verifiable contribution, whether you are learning the codebase or reviewing advanced work:
 
-- **First contribution, documentation:** [Reproduce the Rust QEMU boot on a fresh Ubuntu/WSL machine](https://github.com/bit-foundry-labs/embers-kernel/issues/8).
-- **First contribution, code review:** [Document the early-boot `unsafe` contracts](https://github.com/bit-foundry-labs/embers-kernel/issues/33).
-- **Intermediate, architecture:** [Measure the Rust kernel's tested x86-64 CPU baseline](https://github.com/bit-foundry-labs/embers-kernel/issues/9).
+- **Documentation learning and review:** [Trace the Rust boot path (#89)](https://github.com/bit-foundry-labs/embers-kernel/issues/89). Contributor `archweave` has volunteered to lead the requested map; offer a source-linked review or coordinate on the issue instead of opening a duplicate PR.
+- **Completed reproducibility example:** [Ubuntu/QEMU reproduction (#8)](https://github.com/bit-foundry-labs/embers-kernel/issues/8) was completed by merged [PR #87](https://github.com/bit-foundry-labs/embers-kernel/pull/87). The [Ubuntu 26.04 evidence](rust-kernel/README.md#ubuntu-2604-reproduction-record-issue-8) is available to study or independently reproduce, but #8 is no longer an open contribution task.
+- **Independent review:** The [M06 pre-write integration queue (#110)](https://github.com/bit-foundry-labs/embers-kernel/issues/110) tracks remaining security-review questions. Current examples are [#104: Limine memory-map overlap validation](https://github.com/bit-foundry-labs/embers-kernel/pull/104) and [#107: copied boot-map classifications](https://github.com/bit-foundry-labs/embers-kernel/pull/107). Both are draft PRs; confirm their current status and coordinate on the PR before reviewing.
 
 For deeper research, see the [capability threat-model task](https://github.com/bit-foundry-labs/embers-kernel/issues/12) and the [contributor-launch milestone](https://github.com/bit-foundry-labs/embers-kernel/issues/24).
 
 Read [the contribution guide](CONTRIBUTING.md), [research roadmap](docs/CONTRIBUTOR_ROADMAP.md), [review standard](docs/CODE_REVIEW_STANDARD.md), and [Code of Conduct](CODE_OF_CONDUCT.md). Comment on an issue before undertaking substantial work.
+
+## Reviewers and future maintainers
+
+Want to help strengthen Embers without writing kernel code? **Independent technical reviews are contributions**, especially reviews of paging, unsafe Rust, capability protocols, and reproducible QEMU tests. Public review comments do not require repository write access.
+
+**Start with a concrete review:** Find an active question in the [M06 integration queue](https://github.com/bit-foundry-labs/embers-kernel/issues/110) or browse [open pull requests](https://github.com/bit-foundry-labs/embers-kernel/pulls?q=is%3Apr+is%3Aopen). Check the latest commit, identify an invariant or negative test to inspect, and comment with the exact evidence and remaining limitations. Coordinate before beginning an extensive review, particularly on draft PRs.
+
+**Grow through demonstrated work:** Anyone can contribute; reviewers who demonstrate careful judgment across changes may request **community-reviewer recognition** using the [public role-interest template](https://github.com/bit-foundry-labs/embers-kernel/issues/new?template=role_interest.md), linking their work. Recognition requires the volunteer's consent and a recorded maintainer decision, and grants no automatic GitHub privileges. A future maintainer appointment separately requires sustained trust, explicit invitation, defined responsibilities, and a deliberate least-privilege access decision.
+
+Read the [community roles and selection process](docs/CONTRIBUTOR_ROLES.md) and the [review standard](docs/CODE_REVIEW_STANDARD.md). No open role promises repository access, employment, or compensation.
 
 ## License and stewardship
 
