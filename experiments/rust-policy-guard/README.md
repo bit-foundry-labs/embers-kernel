@@ -60,7 +60,7 @@ experiment establishes kernel capability enforcement. See also [issue #14](https
 ## Generation-tagged handles and delegation interleavings (stacked research)
 
 The `delegation_research/interleavings.rs` tests extend the **test-only**
-delegation model introduced in draft PR #112. A `Handle` contains a slot and
+delegation model introduced in merged PR #112. A `Handle` contains a slot and
 generation; reusing a test-fixture slot increments its generation, so the old
 handle fails validation. A separate parent version increments on successful
 delegation and test-fixture retirement. Two requests may observe the same

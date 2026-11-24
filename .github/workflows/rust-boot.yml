@@ -9,6 +9,7 @@ on:
       - "scripts/check_rust_elf.py"
       - "scripts/check_elf_loads.py"
       - "scripts/check_active_pte_qmp.py"
+      - "scripts/check_reserved_frame_hhdm_qmp.py"
       - "Makefile"
       - ".github/workflows/rust-boot.yml"
   # Required checks must run even for documentation-only pull requests.
@@ -108,6 +109,14 @@ jobs:
             --cpu "${{ matrix.cpu_model }}" \
             --iso build/embers-rust.iso \
             --elf rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel
+      - name: Verify boot frame HHDM backing with read-only paused QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_reserved_frame_hhdm_qmp.py --self-test
+          python3 scripts/check_reserved_frame_hhdm_qmp.py \
+            --cpu "${{ matrix.cpu_model }}" \
+            --iso build/embers-rust.iso
       - name: Feature-gated transition stack BSS probe in QEMU
         shell: bash
         run: |
