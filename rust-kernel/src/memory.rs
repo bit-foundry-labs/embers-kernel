@@ -21,6 +21,33 @@ impl Region {
     };
 }
 
+/// Immutable copy of Limine's boot-time region descriptions.
+///
+/// This is copied metadata, NOT proof of physical ownership, valid CPU
+/// mappings, DMA isolation, or reclamation safety. The bootloader handoff
+/// remains trusted; callers must not treat region kinds as capabilities.
+/// Entries other than kinds 0 and 5 may overlap; this is not a disjoint
+/// partition. Construction checks the count, not whether selection validated it.
+pub struct BootMapSnapshot {
+    regions: [Region; MAX_BOOT_REGIONS],
+    count: usize,
+}
+
+impl BootMapSnapshot {
+    /// Retain only the copied entries; reject malformed lengths before slicing.
+    /// This does not independently validate the region values or provenance.
+    pub fn from_copied_entries(regions: [Region; MAX_BOOT_REGIONS], count: usize) -> Option<Self> {
+        if count == 0 || count > MAX_BOOT_REGIONS {
+            return None;
+        }
+        Some(Self { regions, count })
+    }
+
+    pub fn regions(&self) -> &[Region] {
+        &self.regions[..self.count]
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MapError {
     EmptyMap,
@@ -218,6 +245,28 @@ mod tests {
 
     fn region(base: u64, length: u64, kind: u64) -> Region {
         Region { base, length, kind }
+    }
+
+    #[test]
+    fn copied_boot_map_snapshot_keeps_entries_without_limine_pointers() {
+        let usable = region(0x100000, 4 * PAGE_BYTES, USABLE_KIND);
+        let reserved = region(0x300000, PAGE_BYTES, 1);
+        let mut copied = [Region::EMPTY; MAX_BOOT_REGIONS];
+        copied[0] = usable;
+        copied[1] = reserved;
+        let snapshot = BootMapSnapshot::from_copied_entries(copied, 2).unwrap();
+
+        // The snapshot owns its bytes, independent of the caller's array.
+        copied[1] = region(0x400000, PAGE_BYTES, 2);
+        assert_eq!(snapshot.regions(), &[usable, reserved]);
+        assert_eq!(snapshot.regions().get(2), None);
+        assert!(BootMapSnapshot::from_copied_entries(copied, 0).is_none());
+        assert!(BootMapSnapshot::from_copied_entries(copied, MAX_BOOT_REGIONS + 1).is_none());
+        assert_eq!(
+            BootMapSnapshot::from_copied_entries(copied, MAX_BOOT_REGIONS)
+                .map(|s| s.regions().len()),
+            Some(MAX_BOOT_REGIONS)
+        );
     }
 
     #[test]
