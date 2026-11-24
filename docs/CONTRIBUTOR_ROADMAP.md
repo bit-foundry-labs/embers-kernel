@@ -35,7 +35,7 @@ This is a research sequence, not a release schedule. Work is tracked in issues a
 - **Source-linked learning and review:** [#89: map the normal Rust boot path from Limine to `READY`](https://github.com/bit-foundry-labs/embers-kernel/issues/89) is open, but `archweave` has volunteered to lead the map. Coordinate or offer a review instead of duplicating their work; QEMU is not required.
 - **Completed reproducibility example:** [#8: independent Ubuntu/QEMU reproduction](https://github.com/bit-foundry-labs/embers-kernel/issues/8) was closed by merged [PR #87](https://github.com/bit-foundry-labs/embers-kernel/pull/87). Its [reproduction record](../rust-kernel/README.md#ubuntu-2604-reproduction-record-issue-8) is useful to learn from, not an available issue to claim.
 
-For more experienced reviewers, [#84: independently review M06 QMP integration evidence](https://github.com/bit-foundry-labs/embers-kernel/issues/84).
+For more experienced reviewers, start with the [active M06 pre-write integration queue (#110)](https://github.com/bit-foundry-labs/embers-kernel/issues/110), or check [open pull requests](https://github.com/bit-foundry-labs/embers-kernel/pulls?q=is%3Apr+is%3Aopen). Verify each issue or PR's current status before choosing a review; [#84](https://github.com/bit-foundry-labs/embers-kernel/issues/84) is a **completed historical review gate**, not an open assignment.
 
 **Completed examples, not open starter tasks:** [#33 unsafe-boundary inventory](https://github.com/bit-foundry-labs/embers-kernel/issues/33) and [#9 QEMU CPU baseline](https://github.com/bit-foundry-labs/embers-kernel/issues/9).
 

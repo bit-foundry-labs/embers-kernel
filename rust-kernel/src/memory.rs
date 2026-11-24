@@ -2,6 +2,7 @@
 pub const PAGE_BYTES: u64 = 4096;
 pub const MIN_PHYSICAL_ADDRESS: u64 = 0x0010_0000;
 pub const USABLE_KIND: u64 = 0;
+pub const BOOTLOADER_RECLAIMABLE_KIND: u64 = 5;
 pub const MAX_BOOT_REGIONS: usize = 128;
 pub const REQUIRED_BOOT_PAGES: u64 = 16;
 
@@ -180,8 +181,10 @@ pub fn choose_pool(regions: &[Region], min_pages: u64) -> Result<FramePool, MapE
     select_pool(regions, min_pages)
 }
 
-/// Check the entire boot memory map, including reserved regions, before any
-/// claim. Fail closed on overlap or overflow rather than repairing ambiguity.
+/// Check every boot-map entry before issuing a frame. The Limine protocol
+/// guarantees that usable and bootloader-reclaimable regions are disjoint
+/// from every other entry. Other non-usable entries may overlap each other;
+/// only usable entries are eligible for frame selection.
 fn select_pool(regions: &[Region], min_pages: u64) -> Result<FramePool, MapError> {
     if regions.is_empty() {
         return Err(MapError::EmptyMap);
@@ -204,7 +207,15 @@ fn select_pool(regions: &[Region], min_pages: u64) -> Result<FramePool, MapError
                 .base
                 .checked_add(earlier.length)
                 .ok_or(MapError::AddressOverflow)?;
-            if region.base < earlier_end && earlier.base < end {
+            // Both USABLE (0) and BOOTLOADER_RECLAIMABLE (5) must be
+            // disjoint from every entry, per Limine's memory-map contract.
+            if region.base < earlier_end
+                && earlier.base < end
+                && (region.kind == USABLE_KIND
+                    || earlier.kind == USABLE_KIND
+                    || region.kind == BOOTLOADER_RECLAIMABLE_KIND
+                    || earlier.kind == BOOTLOADER_RECLAIMABLE_KIND)
+            {
                 return Err(MapError::OverlappingRegions);
             }
         }
@@ -325,12 +336,81 @@ mod tests {
     }
 
     #[test]
-    fn reserved_overlap_rejected_not_silently_skipped() {
-        let map = [
-            region(0x100000, 64 * PAGE_BYTES, 0),
-            region(0x102000, PAGE_BYTES, 1),
-        ];
-        assert_eq!(choose_pool(&map, 16), Err(MapError::OverlappingRegions));
+    fn usable_overlap_is_rejected_in_any_entry_order() {
+        let usable = region(0x100000, 64 * PAGE_BYTES, USABLE_KIND);
+        let reserved = region(0x102000, PAGE_BYTES, 1);
+        let other_usable = region(0x103000, 2 * PAGE_BYTES, USABLE_KIND);
+        for map in [
+            [usable, reserved],
+            [reserved, usable],
+            [usable, other_usable],
+        ] {
+            assert_eq!(choose_pool(&map, 16), Err(MapError::OverlappingRegions));
+        }
+    }
+
+    #[test]
+    fn bootloader_reclaimable_overlap_is_rejected_in_any_entry_order() {
+        let reclaimable = region(0x100000, 8 * PAGE_BYTES, BOOTLOADER_RECLAIMABLE_KIND);
+        let reserved = region(0x104000, 8 * PAGE_BYTES, 1);
+        let other_reclaimable = region(0x102000, 8 * PAGE_BYTES, BOOTLOADER_RECLAIMABLE_KIND);
+        let usable = region(0x200000, 32 * PAGE_BYTES, USABLE_KIND);
+
+        for map in [
+            [reclaimable, reserved, usable],
+            [reserved, reclaimable, usable],
+            [reclaimable, other_reclaimable, usable],
+            [usable, reserved, reclaimable],
+        ] {
+            assert_eq!(choose_pool(&map, 16), Err(MapError::OverlappingRegions));
+        }
+    }
+
+    #[test]
+    fn overlapping_nonusable_regions_do_not_poison_valid_usable_memory() {
+        // A conforming Limine map may overlap non-usable region types.
+        let reserved = region(0x100000, 8 * PAGE_BYTES, 1);
+        let acpi = region(0x104000, 8 * PAGE_BYTES, 2);
+        let usable = region(0x200000, 32 * PAGE_BYTES, USABLE_KIND);
+
+        for map in [[reserved, acpi, usable], [usable, acpi, reserved]] {
+            let mut pool = choose_pool(&map, 16).unwrap();
+            assert_eq!(pool.claim(), Some(0x200000));
+        }
+    }
+
+    #[test]
+    fn limine_kind_numbers_are_pinned_to_the_protocol() {
+        // Literal kinds, not the module constants: a wrong constant must fail.
+        // Limine lets executable/modules (6) overlap; reclaimable (5) never may.
+        let reserved = region(0x100000, 8 * PAGE_BYTES, 1);
+        let usable = region(0x200000, 32 * PAGE_BYTES, 0);
+        let modules = region(0x104000, 8 * PAGE_BYTES, 6);
+        let reclaimable = region(0x104000, 8 * PAGE_BYTES, 5);
+        assert_eq!(
+            choose_pool(&[reserved, modules, usable], 16)
+                .unwrap()
+                .claim(),
+            Some(0x200000)
+        );
+        assert_eq!(
+            choose_pool(&[reserved, reclaimable, usable], 16),
+            Err(MapError::OverlappingRegions)
+        );
+    }
+
+    #[test]
+    fn touching_entries_are_not_overlaps_in_any_entry_order() {
+        let reclaimable = region(0x100000, 4 * PAGE_BYTES, 5);
+        let reserved_low = region(0x104000, PAGE_BYTES, 1);
+        let usable = region(0x200000, 32 * PAGE_BYTES, 0);
+        let reserved_high = region(0x220000, PAGE_BYTES, 1);
+        for map in [
+            [reclaimable, reserved_low, usable, reserved_high],
+            [reserved_low, reclaimable, reserved_high, usable],
+        ] {
+            assert_eq!(choose_pool(&map, 16).unwrap().claim(), Some(0x200000));
+        }
     }
 
     #[test]

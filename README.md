@@ -89,7 +89,7 @@ Start with a narrow, verifiable contribution, whether you are learning the codeb
 
 - **Documentation learning and review:** [Trace the Rust boot path (#89)](https://github.com/bit-foundry-labs/embers-kernel/issues/89). Contributor `archweave` has volunteered to lead the requested map; offer a source-linked review or coordinate on the issue instead of opening a duplicate PR.
 - **Completed reproducibility example:** [Ubuntu/QEMU reproduction (#8)](https://github.com/bit-foundry-labs/embers-kernel/issues/8) was completed by merged [PR #87](https://github.com/bit-foundry-labs/embers-kernel/pull/87). The [Ubuntu 26.04 evidence](rust-kernel/README.md#ubuntu-2604-reproduction-record-issue-8) is available to study or independently reproduce, but #8 is no longer an open contribution task.
-- **Independent review:** [Review the M06 QMP integration evidence](https://github.com/bit-foundry-labs/embers-kernel/issues/84) (more advanced; no kernel changes required).
+- **Independent review:** The [M06 pre-write integration queue (#110)](https://github.com/bit-foundry-labs/embers-kernel/issues/110) tracks remaining security-review questions. Current examples are [#104: Limine memory-map overlap validation](https://github.com/bit-foundry-labs/embers-kernel/pull/104) and [#107: copied boot-map classifications](https://github.com/bit-foundry-labs/embers-kernel/pull/107). Both are draft PRs; confirm their current status and coordinate on the PR before reviewing.
 
 For deeper research, see the [capability threat-model task](https://github.com/bit-foundry-labs/embers-kernel/issues/12) and the [contributor-launch milestone](https://github.com/bit-foundry-labs/embers-kernel/issues/24).
 
@@ -97,11 +97,13 @@ Read [the contribution guide](CONTRIBUTING.md), [research roadmap](docs/CONTRIBU
 
 ## Reviewers and future maintainers
 
-Want to help strengthen Embers without writing kernel code? **Independent technical reviews are welcome**, especially for paging, unsafe Rust, capability protocols, and reproducible QEMU tests. Public review comments do not require repository write access.
+Want to help strengthen Embers without writing kernel code? **Independent technical reviews are contributions**, especially reviews of paging, unsafe Rust, capability protocols, and reproducible QEMU tests. Public review comments do not require repository write access.
 
-We are building a pathway from **contributor → community reviewer → trusted maintainer**. Reviewer recognition is based on evidence-linked technical feedback, not automatic GitHub permissions; future maintainers will be appointed separately when the community and operational needs justify it.
+**Start with a concrete review:** Find an active question in the [M06 integration queue](https://github.com/bit-foundry-labs/embers-kernel/issues/110) or browse [open pull requests](https://github.com/bit-foundry-labs/embers-kernel/pulls?q=is%3Apr+is%3Aopen). Check the latest commit, identify an invariant or negative test to inspect, and comment with the exact evidence and remaining limitations. Coordinate before beginning an extensive review, particularly on draft PRs.
 
-Read the [community roles and selection process](docs/CONTRIBUTOR_ROLES.md), then [register interest in reviewing](https://github.com/bit-foundry-labs/embers-kernel/issues/new?template=role_interest.md). You can also start by reviewing [M06 integration issue #84](https://github.com/bit-foundry-labs/embers-kernel/issues/84). No open role currently promises repository access, employment, or compensation.
+**Grow through demonstrated work:** Anyone can contribute; reviewers who demonstrate careful judgment across changes may request **community-reviewer recognition** using the [public role-interest template](https://github.com/bit-foundry-labs/embers-kernel/issues/new?template=role_interest.md), linking their work. Recognition requires the volunteer's consent and a recorded maintainer decision, and grants no automatic GitHub privileges. A future maintainer appointment separately requires sustained trust, explicit invitation, defined responsibilities, and a deliberate least-privilege access decision.
+
+Read the [community roles and selection process](docs/CONTRIBUTOR_ROLES.md) and the [review standard](docs/CODE_REVIEW_STANDARD.md). No open role promises repository access, employment, or compensation.
 
 ## License and stewardship
 
