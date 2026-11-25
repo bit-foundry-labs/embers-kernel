@@ -83,7 +83,11 @@ pub fn validate_kernel_entry(data: &[u8]) -> Result<(), Error> {
                 .iter()
                 .position(|byte| *byte == 0)
                 .ok_or(Error::Symbol)?;
-            if &tail[..length] == b"kernel_entry" && u16_at(symbol, 6)? != 0 {
+            if &tail[..length] == b"kernel_entry" {
+                let index = usize::from(u16_at(symbol, 6)?);
+                if index == 0 || index >= count || index >= 0xff00 {
+                    return Err(Error::Symbol);
+                }
                 return Ok(());
             }
         }
@@ -568,6 +572,30 @@ for start, end in candidates:
         let data = std::fs::read(&path).expect("read EMBERS_TEST_ELF");
         validate_kernel_markers(&data).expect("Rust rejected kernel markers");
         validate_kernel_entry(&data).expect("Rust rejected kernel entry symbol");
+        let section_offset = u64_at(&data, 40).unwrap() as usize;
+        let section_count = usize::from(u16_at(&data, 60).unwrap());
+        let mut bad_symbol = data.clone();
+        let mut found = false;
+        for i in 0..section_count {
+            let section = section_offset + i * 64;
+            if u32_at(&data, section + 4).unwrap() != 2 {
+                continue;
+            }
+            let strings_index = u32_at(&data, section + 40).unwrap() as usize;
+            let strings_offset =
+                u64_at(&data, section_offset + strings_index * 64 + 24).unwrap() as usize;
+            let offset = u64_at(&data, section + 24).unwrap() as usize;
+            let size = u64_at(&data, section + 32).unwrap() as usize;
+            for entry in (offset..offset + size).step_by(24) {
+                let name = strings_offset + u32_at(&data, entry).unwrap() as usize;
+                if data.get(name..name + 13) == Some(b"kernel_entry\0") {
+                    put(&mut bad_symbol, entry + 6, &u16::MAX.to_le_bytes());
+                    found = true;
+                }
+            }
+        }
+        assert!(found);
+        assert_eq!(validate_kernel_entry(&bad_symbol), Err(Error::Symbol));
         assert!(validate_kernel_entry(&data[..63]).is_err());
         let mut malformed = data.clone();
         put(&mut malformed, 40, &u64::MAX.to_le_bytes());
