@@ -502,6 +502,58 @@ mod tests {
     }
 
     #[test]
+    fn staggered_arrivals_and_adversarial_hints_stay_within_candidate_wait() {
+        // Three jobs stay runnable with remaining work and budget throughout
+        // the nine-tick observation. This is a finite search, not a proof.
+        let patterns = 5_usize.pow(6);
+        for arrivals in [[0, 0, 0], [0, 1, 2], [2, 0, 1]] {
+            let mut jobs = [job(1, 20, 20), job(2, 20, 20), job(3, 20, 20)];
+            for (item, arrival) in jobs.iter_mut().zip(arrivals) {
+                item.job.arrival = arrival;
+            }
+            for limit in [1_u32, 2] {
+                let candidate = jobs.len() as u32 * (limit + 1) - 1;
+                for pattern in 0..patterns {
+                    let mut value = pattern;
+                    let mut choices = [None; 6];
+                    for choice in &mut choices {
+                        *choice = match value % 5 {
+                            0 => None,
+                            1 => Some(1),
+                            2 => Some(2),
+                            3 => Some(3),
+                            _ => Some(999),
+                        };
+                        value /= 5;
+                    }
+                    let recommendations: Vec<_> =
+                        (0..9).map(|tick| choices[tick % choices.len()]).collect();
+                    let observation =
+                        observe_budgeted(&jobs, &recommendations, 9, NonZeroU32::new(limit))
+                            .unwrap();
+                    for item in observation.jobs {
+                        assert!(
+                            item.longest_wait.unwrap() <= candidate,
+                            "arrivals={arrivals:?} limit={limit} pattern={pattern} job={item:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unlimited_suggestions_exceed_the_candidate_limit_example() {
+        let jobs = [job(1, 20, 20), job(2, 20, 20), job(3, 20, 20)];
+        let observation = observe_budgeted(&jobs, &[Some(1); 9], 9, None).unwrap();
+        assert_eq!(observation.jobs[1].first_wait, None);
+        assert_eq!(observation.jobs[1].longest_wait, Some(9));
+        // For three jobs and a recommendation limit of two, the candidate
+        // finite-model threshold is 3 * (2 + 1) - 1 = 8 ticks.
+        assert!(observation.jobs[1].longest_wait.unwrap() > 8);
+    }
+
+    #[test]
     fn idle_ticks_reset_the_recommendation_count() {
         let mut later = job(2, 1, 1);
         later.job.arrival = 3;
