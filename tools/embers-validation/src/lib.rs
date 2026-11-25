@@ -155,8 +155,16 @@ mod tests {
             let p = 64 + i * 56;
             put(&mut data, p, &1_u32.to_le_bytes());
             put(&mut data, p + 4, &flags.to_le_bytes());
-            put(&mut data, p + 8, &((i as u64 + 1) * PAGE_BYTES).to_le_bytes());
-            put(&mut data, p + 16, &(LINK_BASE + i as u64 * PAGE_BYTES).to_le_bytes());
+            put(
+                &mut data,
+                p + 8,
+                &((i as u64 + 1) * PAGE_BYTES).to_le_bytes(),
+            );
+            put(
+                &mut data,
+                p + 16,
+                &(LINK_BASE + i as u64 * PAGE_BYTES).to_le_bytes(),
+            );
             put(&mut data, p + 32, &32_u64.to_le_bytes());
             put(&mut data, p + 40, &0x100_u64.to_le_bytes());
             put(&mut data, p + 48, &PAGE_BYTES.to_le_bytes());
