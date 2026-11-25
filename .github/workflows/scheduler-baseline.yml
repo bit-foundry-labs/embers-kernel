@@ -1,0 +1,30 @@
+name: Scheduler baseline experiment
+
+on:
+  pull_request:
+    paths:
+      - 'experiments/scheduler-baseline/**'
+      - '.github/workflows/scheduler-baseline.yml'
+  push:
+    paths:
+      - 'experiments/scheduler-baseline/**'
+      - '.github/workflows/scheduler-baseline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: experiments/scheduler-baseline
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt,clippy
+      - run: cargo +1.90.0 fmt --all -- --check
+      - run: cargo +1.90.0 test --offline
+      - run: cargo +1.90.0 clippy --offline --all-targets -- -D warnings
