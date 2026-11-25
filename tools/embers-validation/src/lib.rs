@@ -37,7 +37,8 @@ pub enum Error {
     Symbol,
 }
 
-/// Require a defined `kernel_entry` in a bounded ELF64 static symbol table.
+/// Require an exported function `kernel_entry` at the ELF entry point in an
+/// executable allocated section and the first validated load segment.
 pub fn validate_kernel_entry(data: &[u8]) -> Result<(), Error> {
     if data.len() < 64 || !data.starts_with(b"\x7fELF\x02\x01") {
         return Err(Error::Header);
@@ -47,12 +48,14 @@ pub fn validate_kernel_entry(data: &[u8]) -> Result<(), Error> {
     if count == 0 || count > 4096 || u16_at(data, 58)? != 64 {
         return Err(Error::Symbol);
     }
-    let end = shoff
+    let table_end = shoff
         .checked_add(count.checked_mul(64).ok_or(Error::Symbol)?)
         .ok_or(Error::Symbol)?;
-    if shoff < 64 || end > data.len() {
+    if shoff < 64 || table_end > data.len() {
         return Err(Error::Symbol);
     }
+    let text = parse_loads(data)?[0];
+    let entry = u64_at(data, 24)?;
     for i in 0..count {
         let section = shoff + i * 64;
         if u32_at(data, section + 4)? != 2 {
@@ -86,7 +89,27 @@ pub fn validate_kernel_entry(data: &[u8]) -> Result<(), Error> {
                 .ok_or(Error::Symbol)?;
             if &tail[..length] == b"kernel_entry" {
                 let index = usize::from(u16_at(symbol, 6)?);
-                if index == 0 || index >= count || index >= 0xff00 {
+                let value = u64_at(symbol, 8)?;
+                if index == 0
+                    || index >= count
+                    || index >= 0xff00
+                    || symbol[4] != 0x12
+                    || value != entry
+                {
+                    return Err(Error::Symbol);
+                }
+                let target = shoff + index * 64;
+                let flags = u64_at(data, target + 8)?;
+                let section_addr = u64_at(data, target + 16)?;
+                let section_size = u64_at(data, target + 32)?;
+                if flags & 0x6 != 0x6
+                    || section_addr < text.vaddr
+                    || end(section_addr, section_size) > end(text.vaddr, text.memsz)
+                    || value < section_addr
+                    || u128::from(value) >= end(section_addr, section_size)
+                    || value < text.vaddr
+                    || u128::from(value) >= end(text.vaddr, text.memsz)
+                {
                     return Err(Error::Symbol);
                 }
                 return Ok(());
@@ -243,7 +266,17 @@ pub struct PhysicalCandidate {
 fn serial_base(serial: &str, kind: &str) -> Result<u64, Error> {
     let prefix = format!("ADDRESS: executable {kind} base = 0x");
     let mut value = None;
-    for line in serial.lines().map(str::trim) {
+    // Match Python str.splitlines() for the independent reference check.
+    for line in serial
+        .split(|ch| {
+            matches!(
+                ch,
+                '\n' | '\r' | '\u{b}' | '\u{c}' | '\u{1c}'
+                    ..='\u{1e}' | '\u{85}' | '\u{2028}' | '\u{2029}'
+            )
+        })
+        .map(str::trim)
+    {
         if let Some(hex) = line.strip_prefix(&prefix) {
             if hex.len() != 16
                 || !hex
@@ -294,6 +327,19 @@ mod tests {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
+    fn real_test_input(name: &str) -> Option<std::ffi::OsString> {
+        let value = std::env::var_os(name);
+        if std::env::var_os("EMBERS_REQUIRE_REAL_ARTIFACT").as_deref()
+            == Some(std::ffi::OsStr::new("1"))
+        {
+            assert!(
+                value.is_some(),
+                "{name} must be set for required real-artifact tests"
+            );
+        }
+        value
+    }
+
     fn put(data: &mut [u8], offset: usize, bytes: &[u8]) {
         data[offset..offset + bytes.len()].copy_from_slice(bytes);
     }
@@ -328,6 +374,58 @@ mod tests {
             put(&mut data, p + 48, &PAGE_BYTES.to_le_bytes());
         }
         data
+    }
+
+    fn entry_fixture() -> Vec<u8> {
+        let mut data = fixture();
+        let sections = 0x200_usize;
+        put(&mut data, 40, &(sections as u64).to_le_bytes());
+        put(&mut data, 58, &64_u16.to_le_bytes());
+        put(&mut data, 60, &4_u16.to_le_bytes());
+        let text = sections + 64;
+        put(&mut data, text + 8, &6_u64.to_le_bytes());
+        put(&mut data, text + 16, &LINK_BASE.to_le_bytes());
+        put(&mut data, text + 32, &0x100_u64.to_le_bytes());
+        let symbols = sections + 2 * 64;
+        put(&mut data, symbols + 4, &2_u32.to_le_bytes());
+        put(&mut data, symbols + 24, &0x600_u64.to_le_bytes());
+        put(&mut data, symbols + 32, &48_u64.to_le_bytes());
+        put(&mut data, symbols + 40, &3_u32.to_le_bytes());
+        put(&mut data, symbols + 56, &24_u64.to_le_bytes());
+        let strings = sections + 3 * 64;
+        put(&mut data, strings + 4, &3_u32.to_le_bytes());
+        put(&mut data, strings + 24, &0x700_u64.to_le_bytes());
+        put(&mut data, strings + 32, &14_u64.to_le_bytes());
+        put(&mut data, 0x700, b"\0kernel_entry\0");
+        let symbol = 0x600 + 24;
+        put(&mut data, symbol, &1_u32.to_le_bytes());
+        data[symbol + 4] = 0x12;
+        put(&mut data, symbol + 6, &1_u16.to_le_bytes());
+        put(&mut data, symbol + 8, &(LINK_BASE + 0x10).to_le_bytes());
+        data
+    }
+
+    #[test]
+    fn entry_symbol_must_match_executable_entry_and_section() {
+        let valid = entry_fixture();
+        assert_eq!(validate_kernel_entry(&valid), Ok(()));
+        let symbol = 0x600 + 24;
+        for (offset, bytes) in [
+            (symbol + 8, 0xdeadbeef_u64.to_le_bytes().to_vec()),
+            (symbol + 6, 2_u16.to_le_bytes().to_vec()),
+            (symbol + 4, vec![0x01]),
+            (0x200 + 64 + 8, 2_u64.to_le_bytes().to_vec()),
+            (0x200 + 64 + 16, (LINK_BASE + 0x20).to_le_bytes().to_vec()),
+            (0x200 + 64 + 32, u64::MAX.to_le_bytes().to_vec()),
+        ] {
+            let mut data = valid.clone();
+            put(&mut data, offset, &bytes);
+            assert_eq!(
+                validate_kernel_entry(&data),
+                Err(Error::Symbol),
+                "offset {offset}"
+            );
+        }
     }
 
     #[test]
@@ -541,6 +639,24 @@ except ValueError:
     }
 
     #[test]
+    fn shared_page_is_an_intentional_rust_only_rejection() {
+        let mut data = fixture();
+        let second = 64 + 56;
+        put(&mut data, second + 8, &(PAGE_BYTES + 0x180).to_le_bytes());
+        put(&mut data, second + 16, &(LINK_BASE + 0x180).to_le_bytes());
+        assert_eq!(parse_loads(&data), Err(Error::SharedLoadPage));
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut child = Command::new("python3")
+            .args(["-c", "import sys; sys.path.insert(0, 'scripts'); from check_elf_loads import parse_loads; parse_loads(sys.stdin.buffer.read())"])
+            .current_dir(root)
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("python3 is required for differential tests");
+        child.stdin.take().unwrap().write_all(&data).unwrap();
+        assert!(child.wait().unwrap().success());
+    }
+
+    #[test]
     fn limine_decisions_and_ranges_match_python_reference() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let oracle = r#"
@@ -558,7 +674,7 @@ for start, end in candidates:
         let loads = parse_loads(&data).unwrap();
         let serial = "ADDRESS: executable physical base = 0x000000000ff44000\n\
                       ADDRESS: executable virtual base = 0xffffffff80000000\n";
-        let cases = [
+        let mut cases = vec![
             serial.to_owned(),
             serial.to_owned() + serial,
             serial.replace("0ff44000", "0ff44001"),
@@ -566,6 +682,12 @@ for start, end in candidates:
             serial.replace("000000000ff44000", "fffffffffffff000"),
             serial.replace("physical", "missing"),
         ];
+        for separator in [
+            "\r", "\r\n", "\u{b}", "\u{c}", "\u{1c}", "\u{1d}", "\u{1e}", "\u{85}", "\u{2028}",
+            "\u{2029}",
+        ] {
+            cases.push(serial.replace('\n', separator));
+        }
         for input in cases {
             let mut child = Command::new("python3")
                 .args(["-c", oracle, &input])
@@ -590,12 +712,12 @@ for start, end in candidates:
 
     #[test]
     fn real_ci_serial_addresses_match_python_when_provided() {
-        let Some(path) = std::env::var_os("EMBERS_TEST_SERIAL") else {
+        let Some(path) = real_test_input("EMBERS_TEST_SERIAL") else {
             eprintln!("EMBERS_TEST_SERIAL is not set; real-serial comparison not run");
             return;
         };
         let serial = std::fs::read_to_string(path).expect("read EMBERS_TEST_SERIAL");
-        let elf_path = std::env::var_os("EMBERS_TEST_ELF")
+        let elf_path = real_test_input("EMBERS_TEST_ELF")
             .expect("EMBERS_TEST_ELF is required with EMBERS_TEST_SERIAL");
         let data = std::fs::read(elf_path).expect("read EMBERS_TEST_ELF");
         let loads = parse_loads(&data).unwrap();
@@ -621,13 +743,22 @@ for start, end in candidates:
 
     #[test]
     fn real_kernel_load_layout_matches_python_when_provided() {
-        let Some(path) = std::env::var_os("EMBERS_TEST_ELF") else {
+        let Some(path) = real_test_input("EMBERS_TEST_ELF") else {
             eprintln!("EMBERS_TEST_ELF is not set; real-artifact comparison not run");
             return;
         };
         let data = std::fs::read(&path).expect("read EMBERS_TEST_ELF");
         validate_kernel_markers(&data).expect("Rust rejected kernel markers");
         validate_kernel_entry(&data).expect("Rust rejected kernel entry symbol");
+        let mut duplicate_mode = data.clone();
+        let ready = b"READY: Embers Rust no_std entry reached.";
+        let second_mode: &[u8] = if data.windows(ready.len()).any(|w| w == ready) {
+            b"TEST: intentional invalid opcode"
+        } else {
+            ready
+        };
+        duplicate_mode.extend_from_slice(second_mode);
+        assert_eq!(validate_kernel_markers(&duplicate_mode), Err(Error::Marker));
         let section_offset = u64_at(&data, 40).unwrap() as usize;
         let section_count = usize::from(u16_at(&data, 60).unwrap());
         let mut bad_symbol = data.clone();
@@ -679,7 +810,7 @@ for start, end in candidates:
 
     #[test]
     fn real_kernel_marker_and_symbol_mutations_match_python_when_provided() {
-        let Some(path) = std::env::var_os("EMBERS_TEST_ELF") else {
+        let Some(path) = real_test_input("EMBERS_TEST_ELF") else {
             eprintln!("EMBERS_TEST_ELF is not set; marker differential test not run");
             return;
         };

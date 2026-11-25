@@ -4,10 +4,14 @@ on:
   pull_request:
     paths:
       - "tools/embers-validation/**"
+      - "scripts/check_elf_loads.py"
+      - "scripts/check_rust_elf.py"
       - ".github/workflows/rust-host-validation.yml"
   push:
     paths:
       - "tools/embers-validation/**"
+      - "scripts/check_elf_loads.py"
+      - "scripts/check_rust_elf.py"
       - ".github/workflows/rust-host-validation.yml"
 
 permissions:

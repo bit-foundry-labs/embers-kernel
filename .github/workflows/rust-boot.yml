@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "rust-kernel/**"
+      - "tools/embers-validation/**"
       - "linker.ld"
       - "scripts/make_iso.sh"
       - "scripts/check_rust_elf.py"
@@ -103,6 +104,7 @@ jobs:
           fi
       - name: Compare Rust and Python validation on the matching ELF and serial log
         env:
+          EMBERS_REQUIRE_REAL_ARTIFACT: "1"
           EMBERS_TEST_ELF: ${{ github.workspace }}/rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel
           EMBERS_TEST_SERIAL: ${{ github.workspace }}/build/embers-rust-serial-${{ matrix.profile_name }}.log
         run: |
