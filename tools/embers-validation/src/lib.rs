@@ -509,6 +509,35 @@ for start, end in candidates:
     }
 
     #[test]
+    fn real_ci_serial_addresses_match_python_when_provided() {
+        let Some(path) = std::env::var_os("EMBERS_TEST_SERIAL") else {
+            eprintln!("EMBERS_TEST_SERIAL is not set; real-serial comparison not run");
+            return;
+        };
+        let serial = std::fs::read_to_string(path).expect("read EMBERS_TEST_SERIAL");
+        let data = fixture();
+        let loads = parse_loads(&data).unwrap();
+        let actual = derive_candidates(&loads, &serial).expect("Rust rejected serial addresses");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let oracle = "import sys; sys.path.insert(0,'scripts'); from check_elf_loads import parse_loads,derive_candidates; print(''.join(f'{a:x} {b:x}\\n' for a,b in derive_candidates(parse_loads(sys.stdin.buffer.read()),sys.argv[1])),end='')";
+        let mut child = Command::new("python3")
+            .args(["-c", oracle, &serial])
+            .current_dir(root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(&data).unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success());
+        let ranges: String = actual
+            .iter()
+            .map(|x| format!("{:x} {:x}\n", x.start, x.end))
+            .collect();
+        assert_eq!(ranges.as_bytes(), output.stdout);
+    }
+
+    #[test]
     fn real_kernel_load_layout_matches_python_when_provided() {
         let Some(path) = std::env::var_os("EMBERS_TEST_ELF") else {
             eprintln!("EMBERS_TEST_ELF is not set; real-artifact comparison not run");
