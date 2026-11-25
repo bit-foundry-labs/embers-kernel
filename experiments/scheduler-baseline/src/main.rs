@@ -1,5 +1,5 @@
 use scheduler_baseline::budget::{
-    simulate_budgeted, simulate_budgeted_with_limit, BudgetJob, EndState, Report,
+    observe_budgeted, simulate_budgeted, simulate_budgeted_with_limit, BudgetJob, EndState, Report,
 };
 use scheduler_baseline::{simulate, Job, Policy};
 use std::num::NonZeroU32;
@@ -150,4 +150,29 @@ fn main() {
     println!("workload=repeated-suggestion (simulated ticks)");
     print_budget_trace("unlimited", &unchecked, &jobs);
     print_budget_trace("limit-2", &limited, &jobs);
+
+    println!("workload=partial-horizon (four simulated ticks)");
+    for (name, recommendations, limit) in [
+        ("unlimited", &suggestions[..4], None),
+        ("limit-2", &suggestions[..4], NonZeroU32::new(2)),
+        ("round-robin", &suggestions[..0], None),
+    ] {
+        let observation = observe_budgeted(&jobs, recommendations, 4, limit).unwrap();
+        let choices: Vec<_> = observation
+            .report
+            .dispatches
+            .iter()
+            .map(|(_, id)| *id)
+            .collect();
+        println!(
+            "  {name}: dispatches={choices:?} complete={}",
+            observation.complete
+        );
+        for item in observation.jobs {
+            println!(
+                "    job={} state={:?} first_wait={:?} longest_wait={:?} waiting_at_end={:?}",
+                item.id, item.state, item.first_wait, item.longest_wait, item.waiting_at_end
+            );
+        }
+    }
 }
