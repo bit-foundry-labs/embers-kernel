@@ -101,6 +101,11 @@ jobs:
             echo "Normal boot unexpectedly ran the optional ownership smoke test" >&2
             exit 1
           fi
+      - name: Compare Rust and Python validation on the matching ELF and serial log
+        env:
+          EMBERS_TEST_ELF: ${{ github.workspace }}/rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel
+          EMBERS_TEST_SERIAL: ${{ github.workspace }}/build/embers-rust-serial-${{ matrix.profile_name }}.log
+        run: cargo +1.90.0 test --offline --manifest-path tools/embers-validation/Cargo.toml
       - name: Inspect all ELF LOAD pages using paused QEMU physical reads
         shell: bash
         run: |

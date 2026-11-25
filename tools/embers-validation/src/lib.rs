@@ -535,7 +535,9 @@ for start, end in candidates:
             return;
         };
         let serial = std::fs::read_to_string(path).expect("read EMBERS_TEST_SERIAL");
-        let data = fixture();
+        let elf_path = std::env::var_os("EMBERS_TEST_ELF")
+            .expect("EMBERS_TEST_ELF is required with EMBERS_TEST_SERIAL");
+        let data = std::fs::read(elf_path).expect("read EMBERS_TEST_ELF");
         let loads = parse_loads(&data).unwrap();
         let actual = derive_candidates(&loads, &serial).expect("Rust rejected serial addresses");
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
