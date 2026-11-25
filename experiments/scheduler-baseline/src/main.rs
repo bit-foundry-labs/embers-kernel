@@ -1,4 +1,4 @@
-use scheduler_baseline::{round_robin, Job};
+use scheduler_baseline::{simulate, Job, Policy};
 
 fn main() {
     let jobs = [
@@ -18,10 +18,13 @@ fn main() {
             work: 2,
         },
     ];
-    for job in round_robin(&jobs, 16).expect("example workload fits the horizon") {
-        println!(
-            "job={} first={} finish={} response={} turnaround={}",
-            job.id, job.first_run, job.finished, job.response, job.turnaround
-        );
+    for policy in [Policy::RoundRobin, Policy::FirstComeFirstServed] {
+        println!("{policy:?}");
+        for job in simulate(&jobs, 16, policy).expect("example workload fits the horizon") {
+            println!(
+                "  job={} first={} finish={} response={} turnaround={}",
+                job.id, job.first_run, job.finished, job.response, job.turnaround
+            );
+        }
     }
 }

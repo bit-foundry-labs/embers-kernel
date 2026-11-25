@@ -27,9 +27,20 @@ pub enum Error {
     TooManyJobs,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Policy {
+    RoundRobin,
+    FirstComeFirstServed,
+}
+
 /// Simulate one tick per dispatch, admitting arrivals before dispatch in input order.
 /// The bounded horizon includes idle ticks; unfinished jobs return an error.
 pub fn round_robin(jobs: &[Job], horizon: u32) -> Result<Vec<Completion>, Error> {
+    simulate(jobs, horizon, Policy::RoundRobin)
+}
+
+/// Simulate a single CPU using the selected deterministic queue policy.
+pub fn simulate(jobs: &[Job], horizon: u32, policy: Policy) -> Result<Vec<Completion>, Error> {
     if jobs.len() > 1024 {
         return Err(Error::TooManyJobs);
     }
@@ -64,7 +75,10 @@ pub fn round_robin(jobs: &[Job], horizon: u32) -> Result<Vec<Completion>, Error>
                     turnaround: finished - jobs[i].arrival,
                 });
             } else {
-                ready.push_back(i);
+                match policy {
+                    Policy::RoundRobin => ready.push_back(i),
+                    Policy::FirstComeFirstServed => ready.push_front(i),
+                }
             }
         }
         if completed.len() == jobs.len() {
@@ -114,6 +128,25 @@ mod tests {
                 },
             ]
         );
+    }
+    #[test]
+    fn first_come_runs_each_job_to_completion() {
+        let jobs = [
+            Job {
+                id: 1,
+                arrival: 0,
+                work: 3,
+            },
+            Job {
+                id: 2,
+                arrival: 1,
+                work: 1,
+            },
+        ];
+        let fifo = simulate(&jobs, 4, Policy::FirstComeFirstServed).unwrap();
+        let rr = simulate(&jobs, 4, Policy::RoundRobin).unwrap();
+        assert_eq!((fifo[0].id, fifo[0].finished, fifo[1].response), (1, 3, 2));
+        assert_eq!((rr[0].id, rr[0].finished, rr[0].response), (2, 3, 1));
     }
     #[test]
     fn handles_idle_and_boundary() {
