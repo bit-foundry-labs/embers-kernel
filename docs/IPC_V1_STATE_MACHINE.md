@@ -54,7 +54,7 @@ This is a proposed split-phase refinement of the original contract's synchroniza
 
 Budget fixed-capacity storage, not only live payload bytes: for Q fixed queue slots and S staging slots, payload capacity is at most (Q+S)*M bytes per endpoint, plus separately bounded metadata/alignment/holds and any copy scratch storage. The reservation aliases kernel-owned queued bytes in the abstract model, not user memory, so it consumes no extra payload slot unless a concrete implementation copies it. Use checked arithmetic, a global endpoint count limit, per-owner quotas and an atomic reserve/charge rule. Choose either copy into an already allocated queue slot at commit or transfer a separately allocated slot with equivalent accounting; never charge the same storage as both free and occupied. Zero-byte messages still occupy one slot.
 
-## 5. Required traces and negative controls (not executed)
+## 5. Required traces and negative controls (proposed full suite)
 
 | Trace | Expected result |
 | --- | --- |
@@ -83,4 +83,4 @@ Next experiment: one independent host-only finite-state explorer under research/
 - [seL4 IPC tutorial](https://docs.sel4.systems/Tutorials/ipc): capability-controlled endpoint IPC is a useful comparison, but seL4's small-message synchronous rendezvous is not Embers' proposed bounded asynchronous queue. Do not transfer its guarantees to Embers.
 - [Embers IPC contract](IPC_V1_CONTRACT.md) and [split-phase revocation experiment](../research/formal/revocation/README.md): project-specific constraints and modeled precedents.
 
-No executable test or model checker run accompanies this note. Design acceptance, model validation and hardware verification remain distinct gates.
+A deliberately narrower executable schedule explorer and measured local results are recorded in [the IPC reference experiment](../research/formal/ipc/README.md). It does not execute the full proposed trace suite or model user copies, generations or actual hardware. Design acceptance, model validation and hardware verification remain distinct gates.
