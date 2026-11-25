@@ -59,6 +59,13 @@ rust-paging-mode-test:
 	./build/embers-paging-mode-tests
 	python3 scripts/check_paging_snapshot.py --self-test
 
+# Host-only fail-closed transition ordering model; no privileged CR3 write.
+.PHONY: rust-transition-gate-test
+rust-transition-gate-test:
+	mkdir -p build
+	cd rust-kernel && rustc --edition=2021 --test tests/cr3_transition_gate_host.rs -o ../build/embers-transition-gate-tests
+	./build/embers-transition-gate-tests
+
 # One-shot BSP initial-pool issuance tests; no hardware ownership proof.
 .PHONY: rust-boot-pool-gate-test
 rust-boot-pool-gate-test:
