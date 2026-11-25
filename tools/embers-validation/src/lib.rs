@@ -32,6 +32,35 @@ pub enum Error {
     Entry,
     SerialMetadata,
     PhysicalRange,
+    Marker,
+}
+
+/// Check the byte markers required by the existing Python kernel ELF check.
+/// This does not validate the exported `kernel_entry` symbol.
+pub fn validate_kernel_markers(data: &[u8]) -> Result<(), Error> {
+    fn contains(data: &[u8], needle: &[u8]) -> bool {
+        data.windows(needle.len()).any(|window| window == needle)
+    }
+    const BASE: &[u8] = b"EMBERS: Rust no_std";
+    const LIMINE: [u8; 24] = [
+        0xc8, 0xa6, 0x95, 0x5c, 0x2d, 0x2b, 0x56, 0xf9, 0xdc, 0x6b, 0x53, 0x44, 0x49, 0x38, 0x7b,
+        0x6a, 6, 0, 0, 0, 0, 0, 0, 0,
+    ];
+    const MODES: [&[u8]; 6] = [
+        b"READY: Embers Rust no_std entry reached.",
+        b"TEST: intentional invalid opcode",
+        b"TEST: intentional page fault",
+        b"TEST: intentional double fault through blocked #PF gate",
+        b"TEST: supervisor read-only write target = ",
+        b"TEST: supervisor NX fetch target = ",
+    ];
+    if !contains(data, BASE)
+        || !contains(data, &LIMINE)
+        || MODES.iter().filter(|marker| contains(data, marker)).count() != 1
+    {
+        return Err(Error::Marker);
+    }
+    Ok(())
 }
 
 fn read<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], Error> {
@@ -241,6 +270,20 @@ mod tests {
     }
 
     #[test]
+    fn kernel_markers_require_base_limine_and_exactly_one_mode() {
+        let mut data = b"EMBERS: Rust no_std".to_vec();
+        for value in [0xf9562b2d5c95a6c8_u64, 0x6a7b384944536bdc, 6] {
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+        assert_eq!(validate_kernel_markers(&data), Err(Error::Marker));
+        data.extend_from_slice(b"READY: Embers Rust no_std entry reached.");
+        assert_eq!(validate_kernel_markers(&data), Ok(()));
+        data.extend_from_slice(b"TEST: intentional page fault");
+        assert_eq!(validate_kernel_markers(&data), Err(Error::Marker));
+        assert_eq!(validate_kernel_markers(b""), Err(Error::Marker));
+    }
+
+    #[test]
     fn rejects_every_truncated_header_or_table() {
         let data = fixture();
         for len in 0..64 + 3 * 56 {
@@ -416,6 +459,7 @@ for start, end in candidates:
             return;
         };
         let data = std::fs::read(&path).expect("read EMBERS_TEST_ELF");
+        validate_kernel_markers(&data).expect("Rust rejected kernel markers");
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let output = Command::new("python3")
             .arg(root.join("scripts/check_elf_loads.py"))
