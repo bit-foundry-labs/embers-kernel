@@ -2,7 +2,7 @@
 
 Status: research guidance, not an implemented guarantee or a decision to adopt a
 verification tool. Baseline: main at `992fc197776076cf428f0a2687050e10e4b15e84`.
-The [M06 transition proposal](PAGING_TRANSITION_V1.md) remains authoritative for
+The [M06 transition proposal](../PAGING_TRANSITION_V1.md) remains authoritative for
 the proposed first transition; [issue #110](https://github.com/bit-foundry-labs/embers-kernel/issues/110)
 tracks the integration review. Drafts [#109](https://github.com/bit-foundry-labs/embers-kernel/pull/109),
 [#106](https://github.com/bit-foundry-labs/embers-kernel/pull/106), and
@@ -101,6 +101,46 @@ already established. Deliberate failure tests should establish that rejected
 preconditions cannot reach a privileged write; actual QEMU transition and fault
 evidence remains distinct from host-level model checking. SMP shootdowns,
 device DMA, and reclamation require their own later arguments.
+
+## Worked trace against main
+
+The following is a source review of the first boot diagnostic reservation at
+`992fc197776076cf428f0a2687050e10e4b15e84`, not an observed physical
+address or a claim that this reservation is a page-table frame.
+
+- **Selection:** [boot_memory.rs](../../rust-kernel/src/boot_memory.rs)
+  copies up to 128 Limine descriptors while trusting their mapped pointers.
+  [memory.rs](../../rust-kernel/src/memory.rs) rejects zero-length or
+  overflowing ranges and overlaps involving usable or reclaimable entries,
+  selects the lowest sufficiently large usable span at or above 1 MiB, and
+  aligns inward to 4 KiB. This relies on truthful bootloader metadata.
+- **Reservation:** the one-shot permit restricts production pool issuance
+  through this module; [frame_registry.rs](../../rust-kernel/src/frame_registry.rs)
+  reserves two numeric pages in the initial record and rejects conflicting
+  records within its registry. [kernel_state.rs](../../rust-kernel/src/kernel_state.rs)
+  retains that allocator and map. Owner labels are not authenticated and the
+  record does not exclude existing hardware aliases or establish global
+  physical ownership. Test-only selectors can construct overlapping pools.
+- **Access:** [main.rs](../../rust-kernel/src/main.rs) calculates and checks
+  HHDM candidates for the two frame numbers. It does not establish that those
+  candidates provide an exclusive writable mapping or dereference the frames.
+  Inherited page-table frames and other live hardware uses need a separately
+  justified exclusion; draft [#108](https://github.com/bit-foundry-labs/embers-kernel/pull/108)
+  is related research, not merged proof of complete exclusion.
+- **Initialization and publication:** this diagnostic reservation does not
+  zero the actual frames, populate a hierarchy, or publish a new root.
+- **Transition and retention:** no new CR3 is installed by this path. The
+  registry has no release operation, but non-reuse within this bookkeeping
+  system is not a proof of global quiescence or device safety.
+
+**Next bounded engineering question:** how can a future M06 frame preparation
+API establish a writable inherited mapping and exclude conflicting active
+uses before zeroing a reserved frame? Specify its assumptions and negative
+paths first, then check it against #108, #109, and the #110 integration queue.
+Avoid creating a parallel model before examining those drafts.
+
+This trace is a source inspection only; existing test names indicate intended
+coverage, but no tests or QEMU run were performed for this note.
 
 ## Decision record
 
