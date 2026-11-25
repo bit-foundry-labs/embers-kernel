@@ -570,4 +570,41 @@ for start, end in candidates:
             assert!(python.lines().any(|line| line == expected));
         }
     }
+
+    #[test]
+    fn real_kernel_marker_and_symbol_mutations_match_python_when_provided() {
+        let Some(path) = std::env::var_os("EMBERS_TEST_ELF") else {
+            eprintln!("EMBERS_TEST_ELF is not set; marker differential test not run");
+            return;
+        };
+        let original = std::fs::read(path).unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let temporary =
+            std::env::temp_dir().join(format!("embers-elf-differential-{}", std::process::id()));
+        for needle in [
+            b"EMBERS: Rust no_std".as_slice(),
+            b"kernel_entry".as_slice(),
+        ] {
+            let mut data = original.clone();
+            let mut changed = 0;
+            for position in 0..data.len().saturating_sub(needle.len()) + 1 {
+                if data.get(position..position + needle.len()) == Some(needle) {
+                    data[position] ^= 1;
+                    changed += 1;
+                }
+            }
+            assert!(changed > 0);
+            std::fs::write(&temporary, &data).unwrap();
+            let python = Command::new("python3")
+                .arg(root.join("scripts/check_rust_elf.py"))
+                .arg(&temporary)
+                .output()
+                .unwrap();
+            let rust_accepts =
+                validate_kernel_markers(&data).is_ok() && validate_kernel_entry(&data).is_ok();
+            assert!(!python.status.success());
+            assert_eq!(rust_accepts, python.status.success());
+        }
+        std::fs::remove_file(temporary).unwrap();
+    }
 }
