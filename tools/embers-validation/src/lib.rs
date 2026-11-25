@@ -33,6 +33,62 @@ pub enum Error {
     SerialMetadata,
     PhysicalRange,
     Marker,
+    Symbol,
+}
+
+/// Require a defined `kernel_entry` in a bounded ELF64 static symbol table.
+pub fn validate_kernel_entry(data: &[u8]) -> Result<(), Error> {
+    if data.len() < 64 || !data.starts_with(b"\x7fELF\x02\x01") {
+        return Err(Error::Header);
+    }
+    let shoff = usize::try_from(u64_at(data, 40)?).map_err(|_| Error::Symbol)?;
+    let count = usize::from(u16_at(data, 60)?);
+    if count == 0 || count > 4096 || u16_at(data, 58)? != 64 {
+        return Err(Error::Symbol);
+    }
+    let end = shoff
+        .checked_add(count.checked_mul(64).ok_or(Error::Symbol)?)
+        .ok_or(Error::Symbol)?;
+    if shoff < 64 || end > data.len() {
+        return Err(Error::Symbol);
+    }
+    for i in 0..count {
+        let section = shoff + i * 64;
+        if u32_at(data, section + 4)? != 2 {
+            continue;
+        }
+        let link = usize::try_from(u32_at(data, section + 40)?).map_err(|_| Error::Symbol)?;
+        if link >= count || u32_at(data, shoff + link * 64 + 4)? != 3 {
+            return Err(Error::Symbol);
+        }
+        let strings_section = shoff + link * 64;
+        let slice = |offset: u64, size: u64| -> Result<&[u8], Error> {
+            let start = usize::try_from(offset).map_err(|_| Error::Symbol)?;
+            let len = usize::try_from(size).map_err(|_| Error::Symbol)?;
+            data.get(start..start.checked_add(len).ok_or(Error::Symbol)?)
+                .ok_or(Error::Symbol)
+        };
+        let strings = slice(
+            u64_at(data, strings_section + 24)?,
+            u64_at(data, strings_section + 32)?,
+        )?;
+        let symbols = slice(u64_at(data, section + 24)?, u64_at(data, section + 32)?)?;
+        if u64_at(data, section + 56)? != 24 || symbols.len() % 24 != 0 {
+            return Err(Error::Symbol);
+        }
+        for symbol in symbols.chunks_exact(24) {
+            let name = usize::try_from(u32_at(symbol, 0)?).map_err(|_| Error::Symbol)?;
+            let tail = strings.get(name..).ok_or(Error::Symbol)?;
+            let length = tail
+                .iter()
+                .position(|byte| *byte == 0)
+                .ok_or(Error::Symbol)?;
+            if &tail[..length] == b"kernel_entry" && u16_at(symbol, 6)? != 0 {
+                return Ok(());
+            }
+        }
+    }
+    Err(Error::Symbol)
 }
 
 /// Check the byte markers required by the existing Python kernel ELF check.
@@ -460,6 +516,14 @@ for start, end in candidates:
         };
         let data = std::fs::read(&path).expect("read EMBERS_TEST_ELF");
         validate_kernel_markers(&data).expect("Rust rejected kernel markers");
+        validate_kernel_entry(&data).expect("Rust rejected kernel entry symbol");
+        assert!(validate_kernel_entry(&data[..63]).is_err());
+        let mut malformed = data.clone();
+        put(&mut malformed, 40, &u64::MAX.to_le_bytes());
+        assert!(validate_kernel_entry(&malformed).is_err());
+        let mut malformed = data.clone();
+        put(&mut malformed, 60, &0_u16.to_le_bytes());
+        assert!(validate_kernel_entry(&malformed).is_err());
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let output = Command::new("python3")
             .arg(root.join("scripts/check_elf_loads.py"))
