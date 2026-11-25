@@ -1,0 +1,31 @@
+name: Kani frame-registry research verification
+
+on:
+  pull_request:
+    paths:
+      - "rust-kernel/research/kani_frame_registry.rs"
+      - "rust-kernel/research/KANI_FRAME_REGISTRY.md"
+      - ".github/workflows/kani-frame-registry.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  frame-registry-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out the exact pull-request revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install pinned Kani verifier (research job only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install --locked kani-verifier --version 0.68.0
+          cargo kani setup
+          kani --version
+      - name: Check bounded frame-registry proof harnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          kani rust-kernel/research/kani_frame_registry.rs
