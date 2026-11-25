@@ -142,6 +142,24 @@ Avoid creating a parallel model before examining those drafts.
 This trace is a source inspection only; existing test names indicate intended
 coverage, but no tests or QEMU run were performed for this note.
 
+## Comparison with existing drafts
+
+Checked against #108 head `5bcc3930cea29b5fc4f519226dac7950a94dc6f7`,
+#109 head `1c61e25e06da015fb0f69cd6e4d5e134ace72db2`, and the current
+checkpoint in #110. These are draft-source observations, not new test results.
+
+| Question | Existing evidence | Still needed before a privileged write |
+| --- | --- | --- |
+| Does a candidate translate to its expected physical page under inherited mappings? | Merged #83 and draft #108 inspect first and last bytes of two candidate frames in paused QEMU; #108 also checks for collisions with table pages visited along those four walks. | Evidence is specific to sampled paths and one snapshot. It does not establish complete alias exclusion, lasting authority, Rust pointer validity, or device isolation. |
+| Is a candidate authorized for preparation? | #109 models a transition requiring a sole-issuer assertion, writable backing, exclusive access, and completed zeroing. | Those inputs are caller-supplied booleans; the records are copyable and forgeable. A real design must bind each obligation to actual enforced ownership and valid mapping evidence, including live-use exclusions. |
+| Can preparation start? | #110 section D lists the integration blockers. | The blockers remain open; do not zero a frame, write page tables, or switch CR3. |
+
+**Review question for #110:** What bounded, read-only observation could most
+reduce uncertainty about conflicting live use beyond #108's sampled paths,
+while clearly documenting coverage and unobserved uses? Any candidate needs
+its own review and does not by itself establish exclusive write authority.
+Review #108 and #109 before proposing additional overlapping implementation.
+
 ## Decision record
 
 Use these sources to sharpen M06 review and future tests. Do not add a new proof
