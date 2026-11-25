@@ -553,6 +553,105 @@ mod tests {
         assert!(observation.jobs[1].longest_wait.unwrap() > 8);
     }
 
+    /// Recount waits one tick at a time from the dispatch and terminal trace.
+    /// This intentionally does not use the production wait-update logic.
+    fn recount_wait(job: BudgetJob, observation: &Observation) -> ObservedJob {
+        let terminal = observation
+            .report
+            .outcomes
+            .iter()
+            .find_map(|outcome| match *outcome {
+                EndState::Completed { id, at } if id == job.job.id => {
+                    Some((ObservedState::Completed, at))
+                }
+                EndState::BudgetExhausted { id, at, .. } if id == job.job.id => {
+                    Some((ObservedState::BudgetExhausted, at))
+                }
+                _ => None,
+            });
+        let state = if let Some((state, _)) = terminal {
+            state
+        } else if job.job.arrival < observation.observed_until {
+            ObservedState::Runnable
+        } else {
+            ObservedState::NotArrived
+        };
+        let mut first_wait = None;
+        let mut longest_wait = None;
+        let mut current_wait = 0_u32;
+        let end = terminal.map_or(observation.observed_until, |(_, at)| at);
+        if job.budget > 0 {
+            for tick in job.job.arrival..end {
+                let was_dispatched = observation
+                    .report
+                    .dispatches
+                    .iter()
+                    .any(|&(at, id)| at == tick && id == job.job.id);
+                if was_dispatched {
+                    if first_wait.is_none() {
+                        first_wait = Some(current_wait);
+                    }
+                    current_wait = 0;
+                } else {
+                    current_wait += 1;
+                }
+                longest_wait = Some(longest_wait.unwrap_or(0_u32).max(current_wait));
+            }
+        }
+        ObservedJob {
+            id: job.job.id,
+            state,
+            first_wait,
+            longest_wait,
+            waiting_at_end: (state == ObservedState::Runnable).then_some(current_wait),
+        }
+    }
+
+    #[test]
+    fn wait_accounting_matches_independent_tick_recount() {
+        let mut late = job(3, 3, 3);
+        late.job.arrival = 2;
+        let workloads = [
+            [job(1, 6, 6), job(2, 4, 4), late],
+            [job(1, 6, 2), job(2, 3, 0), late],
+            [job(1, 1, 1), job(2, 2, 2), late],
+        ];
+        let choices = [None, Some(1), Some(2), Some(3), Some(999)];
+        for jobs in workloads {
+            for horizon in [0, 1, 3, 5] {
+                for limit in [None, NonZeroU32::new(1), NonZeroU32::new(2)] {
+                    for pattern in 0..5_usize.pow(5) {
+                        let mut digits = pattern;
+                        let mut recommendations = [None; 5];
+                        for slot in &mut recommendations {
+                            *slot = choices[digits % choices.len()];
+                            digits /= choices.len();
+                        }
+                        let observation =
+                            observe_budgeted(&jobs, &recommendations, horizon, limit).unwrap();
+                        for (job, actual) in jobs.iter().zip(&observation.jobs) {
+                            assert_eq!(
+                                *actual,
+                                recount_wait(*job, &observation),
+                                "horizon={horizon}, limit={limit:?}, pattern={pattern}, job={}",
+                                job.job.id
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn recount_detects_a_corrupted_trailing_wait() {
+        let jobs = [job(1, 5, 5), job(2, 2, 2)];
+        let mut observation = observe_budgeted(&jobs, &[Some(1); 4], 4, None).unwrap();
+        assert_eq!(observation.jobs[1], recount_wait(jobs[1], &observation));
+        observation.jobs[1].longest_wait = Some(0);
+        assert_ne!(observation.jobs[1], recount_wait(jobs[1], &observation));
+    }
+
     #[test]
     fn idle_ticks_reset_the_recommendation_count() {
         let mut later = job(2, 1, 1);
