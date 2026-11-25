@@ -3,6 +3,8 @@
 //! Deterministic, single-CPU scheduling experiment. This is not kernel code.
 use std::collections::VecDeque;
 
+pub mod budget;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Job {
     pub id: u32,
