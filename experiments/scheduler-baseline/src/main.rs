@@ -1,4 +1,39 @@
+use scheduler_baseline::budget::{
+    simulate_budgeted, simulate_budgeted_with_limit, BudgetJob, EndState, Report,
+};
 use scheduler_baseline::{simulate, Job, Policy};
+use std::num::NonZeroU32;
+
+fn print_budget_trace(label: &str, report: &Report, jobs: &[BudgetJob]) {
+    let choices: Vec<_> = report.dispatches.iter().map(|(_, id)| *id).collect();
+    println!("  {label}: dispatches={choices:?}");
+    for item in jobs {
+        let ticks: Vec<_> = report
+            .dispatches
+            .iter()
+            .filter_map(|(tick, id)| (*id == item.job.id).then_some(*tick))
+            .collect();
+        let response = ticks[0] - item.job.arrival;
+        let longest_wait = ticks
+            .windows(2)
+            .map(|w| w[1] - w[0] - 1)
+            .max()
+            .unwrap_or(0)
+            .max(response);
+        let finished = report
+            .outcomes
+            .iter()
+            .find_map(|outcome| match *outcome {
+                EndState::Completed { id, at } if id == item.job.id => Some(at),
+                _ => None,
+            })
+            .expect("example jobs complete");
+        println!(
+            "    job={} first_wait={} longest_wait={} finished={}",
+            item.job.id, response, longest_wait, finished
+        );
+    }
+}
 
 fn main() {
     let workloads: [(&str, &[Job]); 3] = [
@@ -89,4 +124,30 @@ fn main() {
             }
         }
     }
+
+    let jobs = [
+        BudgetJob {
+            job: Job {
+                id: 1,
+                arrival: 0,
+                work: 5,
+            },
+            budget: 5,
+        },
+        BudgetJob {
+            job: Job {
+                id: 2,
+                arrival: 0,
+                work: 2,
+            },
+            budget: 2,
+        },
+    ];
+    let suggestions = [Some(1); 7];
+    let unchecked = simulate_budgeted(&jobs, &suggestions, 7).unwrap();
+    let limited =
+        simulate_budgeted_with_limit(&jobs, &suggestions, 7, NonZeroU32::new(2).unwrap()).unwrap();
+    println!("workload=repeated-suggestion (simulated ticks)");
+    print_budget_trace("unlimited", &unchecked, &jobs);
+    print_budget_trace("limit-2", &limited, &jobs);
 }
