@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "rust-kernel/**"
+      - "tools/embers-validation/**"
       - "Makefile"
       - "linker.ld"
       - "scripts/make_iso.sh"
@@ -90,6 +91,10 @@ jobs:
                 ro-write | nx-exec) expected="FAULT: #PF page fault" ;;
               esac
             fi
+
+            # Check the exact ELF from each normal or fault-injection build.
+            cargo +1.90.0 run --offline --manifest-path tools/embers-validation/Cargo.toml -- \
+              rust-kernel/target/x86_64-unknown-none/release/embers-rust-kernel
 
             # Preserve the existing required M03 job and legacy max logs.
             # Only permission tests repeat in qemu64; same feature ISO.
