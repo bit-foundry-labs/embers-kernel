@@ -11,3 +11,5 @@ cargo clippy --offline --all-targets --manifest-path experiments/scheduler-basel
 ```
 
 The example includes two initial bursts and a later arrival. Units are simulated ticks, not milliseconds or performance measurements. This initial model does not measure context switching overhead, I/O blocking, deadlines, budgets, starvation over unbounded workloads, multicore contention, energy, or p99 latency. The example compares two policies on one hand-authored trace; it is not enough to establish which policy performs better generally. Future experiments should add representative, reproducible traces and aggregate measurements.
+
+The executable runs three fixed traces: interactive bursts alongside a long job, simultaneous arrivals, and staggered background jobs. It reports each job's response and turnaround in simulated ticks plus the maximum of each per trace and policy. Maximum response is the longest wait for the first CPU tick, not the longest gap between subsequent ticks. These deliberately small synthetic examples are not representative performance benchmarks.
