@@ -30,6 +30,8 @@ pub enum Error {
     Flags,
     Overlap,
     Entry,
+    SerialMetadata,
+    PhysicalRange,
 }
 
 fn read<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N], Error> {
@@ -132,9 +134,67 @@ pub fn parse_loads(data: &[u8]) -> Result<[LoadSegment; 3], Error> {
     Ok(loads)
 }
 
+/// A numeric candidate derived from Limine metadata, not proof of a mapping.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhysicalCandidate {
+    pub start: u64,
+    /// The exclusive end may equal 2^64.
+    pub end: u128,
+}
+
+fn serial_base(serial: &str, kind: &str) -> Result<u64, Error> {
+    let prefix = format!("ADDRESS: executable {kind} base = 0x");
+    let mut value = None;
+    for line in serial.lines().map(str::trim) {
+        if let Some(hex) = line.strip_prefix(&prefix) {
+            if hex.len() != 16
+                || !hex
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            {
+                continue;
+            }
+            let parsed = u64::from_str_radix(hex, 16).map_err(|_| Error::SerialMetadata)?;
+            if value.replace(parsed).is_some() {
+                return Err(Error::SerialMetadata);
+            }
+        }
+    }
+    value.ok_or(Error::SerialMetadata)
+}
+
+/// Derive physical ranges from validated load segments and Limine serial output.
+/// These calculations do not establish ownership, lifetime, or page-table mappings.
+pub fn derive_candidates(
+    loads: &[LoadSegment; 3],
+    serial: &str,
+) -> Result<[PhysicalCandidate; 3], Error> {
+    let physical = serial_base(serial, "physical")?;
+    let virtual_base = serial_base(serial, "virtual")?;
+    if virtual_base != LINK_BASE || physical == 0 || physical % PAGE_BYTES != 0 {
+        return Err(Error::SerialMetadata);
+    }
+    let mut candidates = [PhysicalCandidate { start: 0, end: 0 }; 3];
+    for (candidate, segment) in candidates.iter_mut().zip(loads) {
+        let offset = segment
+            .vaddr
+            .checked_sub(virtual_base)
+            .ok_or(Error::PhysicalRange)?;
+        let start = physical.checked_add(offset).ok_or(Error::PhysicalRange)?;
+        let end = end(start, segment.memsz);
+        if end > U64_LIMIT {
+            return Err(Error::PhysicalRange);
+        }
+        *candidate = PhysicalCandidate { start, end };
+    }
+    Ok(candidates)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
 
     fn put(data: &mut [u8], offset: usize, bytes: &[u8]) {
         data[offset..offset + bytes.len()].copy_from_slice(bytes);
@@ -233,5 +293,144 @@ mod tests {
         let mut data = fixture();
         put(&mut data, 32, &u64::MAX.to_le_bytes());
         assert_eq!(parse_loads(&data), Err(Error::Table));
+    }
+
+    #[test]
+    fn limine_candidates_reject_invalid_metadata_and_overflow() {
+        let loads = parse_loads(&fixture()).unwrap();
+        let serial = "ADDRESS: executable physical base = 0x000000000ff44000\n\
+                      ADDRESS: executable virtual base = 0xffffffff80000000\n";
+        let candidates = derive_candidates(&loads, serial).unwrap();
+        assert_eq!(
+            candidates[0],
+            PhysicalCandidate {
+                start: 0x0ff44000,
+                end: 0x0ff44100
+            }
+        );
+        assert_eq!(candidates[2].start, 0x0ff46000);
+        assert!(derive_candidates(&loads, &(serial.to_owned() + serial)).is_err());
+        assert!(derive_candidates(&loads, &serial.replace("0ff44000", "0ff44001")).is_err());
+        assert!(derive_candidates(
+            &loads,
+            &serial.replace("ffffffff80000000", "ffff800000000000")
+        )
+        .is_err());
+        assert!(derive_candidates(
+            &loads,
+            &serial.replace("000000000ff44000", "fffffffffffff000")
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn load_decisions_match_python_reference_on_selected_mutations() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let oracle = r#"
+import sys
+sys.path.insert(0, 'scripts')
+from check_elf_loads import parse_loads
+try:
+    parse_loads(sys.stdin.buffer.read())
+except ValueError:
+    sys.exit(1)
+"#;
+        let good = fixture();
+        let mut cases = vec![good.clone(), good[..90].to_vec()];
+        for (offset, bytes) in [
+            (68, 7_u32.to_le_bytes().to_vec()),
+            (64 + 56 + 4, 6_u32.to_le_bytes().to_vec()),
+            (64 + 56 + 16, LINK_BASE.to_le_bytes().to_vec()),
+            (64 + 48, 4095_u64.to_le_bytes().to_vec()),
+            (32, u64::MAX.to_le_bytes().to_vec()),
+        ] {
+            let mut data = good.clone();
+            put(&mut data, offset, &bytes);
+            cases.push(data);
+        }
+        for data in cases {
+            let mut child = Command::new("python3")
+                .args(["-c", oracle])
+                .current_dir(&root)
+                .stdin(Stdio::piped())
+                .spawn()
+                .expect("python3 is required for differential tests");
+            child.stdin.take().unwrap().write_all(&data).unwrap();
+            let python_accepts = child.wait().unwrap().success();
+            assert_eq!(parse_loads(&data).is_ok(), python_accepts);
+        }
+    }
+
+    #[test]
+    fn limine_decisions_and_ranges_match_python_reference() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let oracle = r#"
+import sys
+sys.path.insert(0, 'scripts')
+from check_elf_loads import derive_candidates, parse_loads
+try:
+    candidates = derive_candidates(parse_loads(sys.stdin.buffer.read()), sys.argv[1])
+except ValueError:
+    sys.exit(1)
+for start, end in candidates:
+    print(f'{start:x} {end:x}')
+"#;
+        let data = fixture();
+        let loads = parse_loads(&data).unwrap();
+        let serial = "ADDRESS: executable physical base = 0x000000000ff44000\n\
+                      ADDRESS: executable virtual base = 0xffffffff80000000\n";
+        let cases = [
+            serial.to_owned(),
+            serial.to_owned() + serial,
+            serial.replace("0ff44000", "0ff44001"),
+            serial.replace("ffffffff80000000", "ffff800000000000"),
+            serial.replace("000000000ff44000", "fffffffffffff000"),
+            serial.replace("physical", "missing"),
+        ];
+        for input in cases {
+            let mut child = Command::new("python3")
+                .args(["-c", oracle, &input])
+                .current_dir(&root)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("python3 is required for differential tests");
+            child.stdin.take().unwrap().write_all(&data).unwrap();
+            let output = child.wait_with_output().unwrap();
+            let rust = derive_candidates(&loads, &input);
+            assert_eq!(rust.is_ok(), output.status.success(), "serial: {input:?}");
+            if let Ok(candidates) = rust {
+                let ranges: String = candidates
+                    .iter()
+                    .map(|item| format!("{:x} {:x}\n", item.start, item.end))
+                    .collect();
+                assert_eq!(ranges.as_bytes(), output.stdout);
+            }
+        }
+    }
+
+    #[test]
+    fn real_kernel_load_layout_matches_python_when_provided() {
+        let Some(path) = std::env::var_os("EMBERS_TEST_ELF") else {
+            eprintln!("EMBERS_TEST_ELF is not set; real-artifact comparison not run");
+            return;
+        };
+        let data = std::fs::read(&path).expect("read EMBERS_TEST_ELF");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let output = Command::new("python3")
+            .arg(root.join("scripts/check_elf_loads.py"))
+            .arg(path)
+            .output()
+            .expect("python3 is required for differential tests");
+        assert!(output.status.success(), "Python rejected the kernel ELF");
+        let loads = parse_loads(&data).expect("Rust rejected the kernel ELF");
+        let python = String::from_utf8(output.stdout).unwrap();
+        for (i, seg) in loads.iter().enumerate() {
+            let expected = format!(
+                "ELF LOAD {i}: flags={} VA=0x{:016x} mem_bytes=0x{:x} file_bytes=0x{:x}",
+                seg.flags, seg.vaddr, seg.memsz, seg.filesz
+            );
+            assert!(python.lines().any(|line| line == expected));
+        }
     }
 }
