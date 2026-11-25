@@ -332,20 +332,29 @@ fn failed_copy_retains_head_and_stale_ticket_cannot_release_new_hold() {
     let mut e = Endpoint::new();
     send(&mut e, Actor::A, &[5]).unwrap();
     let old = e.admit_receive(Actor::B, e.handle(Actor::B), 4).unwrap();
-    assert_eq!(e.finish_receive(Actor::B, old, false), Err(Error::CopyFailed));
+    assert_eq!(
+        e.finish_receive(Actor::B, old, false),
+        Err(Error::CopyFailed)
+    );
     let new = e.admit_receive(Actor::B, e.handle(Actor::B), 4).unwrap();
     assert_eq!(e.finish_receive(Actor::B, old, true), Err(Error::Stale));
     assert_eq!(
         e.finish_receive(Actor::A, new, true),
         Err(Error::Unauthorized)
     );
-    assert_eq!(e.finish_receive(Actor::B, new, true).unwrap().payload(), &[5]);
+    assert_eq!(
+        e.finish_receive(Actor::B, new, true).unwrap().payload(),
+        &[5]
+    );
 }
 
 #[test]
 fn length_limits_and_zero_length_messages() {
     let mut e = Endpoint::new();
-    assert_eq!(send(&mut e, Actor::A, &[0; MAX_BYTES + 1]), Err(Error::TooLarge));
+    assert_eq!(
+        send(&mut e, Actor::A, &[0; MAX_BYTES + 1]),
+        Err(Error::TooLarge)
+    );
     send(&mut e, Actor::A, &[1, 2]).unwrap();
     assert_eq!(
         e.admit_receive(Actor::B, e.handle(Actor::B), 1),
@@ -354,7 +363,11 @@ fn length_limits_and_zero_length_messages() {
     assert_eq!(receive(&mut e, Actor::B).unwrap().payload(), &[1, 2]);
     send(&mut e, Actor::A, &[]).unwrap();
     let ticket = e.admit_receive(Actor::B, e.handle(Actor::B), 0).unwrap();
-    assert!(e.finish_receive(Actor::B, ticket, true).unwrap().payload().is_empty());
+    assert!(e
+        .finish_receive(Actor::B, ticket, true)
+        .unwrap()
+        .payload()
+        .is_empty());
 }
 
 #[test]
@@ -381,7 +394,10 @@ fn closure_drains_holds_before_reuse_and_rejects_stale_handles() {
 fn exhausted_generations_and_tickets_never_wrap() {
     let mut e = Endpoint::new();
     e.serial = u32::MAX;
-    assert_eq!(e.stage(Actor::A, e.handle(Actor::A), &[1]), Err(Error::Exhausted));
+    assert_eq!(
+        e.stage(Actor::A, e.handle(Actor::A), &[1]),
+        Err(Error::Exhausted)
+    );
     assert_eq!(e.staged, [None; 2]);
     e.generation = u32::MAX;
     e.close();
