@@ -13,6 +13,32 @@ New to kernel engineering? The [Learning Lab](docs/learning/README.md) offers th
 
 The default branch contains experimental Rust `no_std` x86-64 boot, GDT/TSS/IDT exception handling, Limine memory-map validation and symbolic frame-owner accounting (M02–M05). Follow the headless QEMU and host-test commands in [README](README.md). Those are **not** ring-3 isolation or capability enforcement. **PR #2** preserves the historical C bootstrap; **PR #3** proposes architecture, and the host-tested policy experiment from **PR #6** is now on `main` in `experiments/rust-policy-guard` (not privileged kernel code).
 
+## Rust-first engineering policy
+
+Embers is a Rust-native systems research project. Rust is the default for original implementation code, including kernel mechanisms, implementation-oriented research prototypes, validation logic and benchmark harnesses. This applies equally to human contributors and automated coding agents.
+
+| Scope | Language rule |
+| --- | --- |
+| Privileged kernel and kernel-linked libraries | Rust `no_std`; minimal architecture-specific assembly only where required. Document every unsafe boundary and ABI assumption. |
+| Host-side implementation prototypes | Rust, preferably allocation-free and `no_std`-compatible where the intended mechanism will enter the kernel. |
+| Host-side architecture validation and performance tools | Rust by default; `std` is appropriate for files, subprocesses, sockets and other host facilities. Prefer bounded parsing and checked arithmetic. |
+| Independent verification | TLA+, Kani, and existing or justified independent Python reference models remain welcome. They must not become runtime authority. |
+| Build orchestration | Shell, Make, YAML and lightweight scripting are appropriate; avoid moving substantive kernel or architecture logic into orchestration. |
+
+Do not introduce C, C++, Python, or other language implementations into the privileged kernel or its linked dependencies without a separately accepted architecture decision. External bootloaders, firmware, toolchains and emulators are distinct dependencies; the policy does not claim they are written in Rust. Preserve the historical C prototype without making it a build dependency. User-space services developed by this project should prefer Rust; arbitrary applications running on a future OS need not use Rust.
+
+New non-Rust implementation-oriented tools require a documented reason, trust boundary, alternatives considered and maintainer acceptance. Independent specifications and test oracles need not be translations of the Rust implementation; preserving independence can expose shared mistakes. Use the smallest necessary dependencies, document supply-chain risks and do not claim Rust alone guarantees security.
+
+### Incremental validation-tool migration
+
+1. Introduce a dependency-free, host-only Rust ELF validator alongside existing Python checks.
+2. Establish parity on valid and malformed ELF fixtures, real kernel artifacts and numeric Limine provenance; compare observable results and rejection behavior. Then consider consolidating the existing ELF scripts.
+3. Port paging snapshot and permission-fault validation, followed by paused-QEMU page walkers only after their pending security-sensitive changes are reconciled.
+4. Preserve independent reference oracles, compile-failure checks and infrastructure scripting when justified. Do not remove or weaken a current CI gate until equivalent coverage, exact-head evidence and review are recorded.
+5. Add a narrow source-language guard in CI for kernel source paths, alongside manual review of assembly, dependencies, build scripts and generated/link inputs. A file-extension guard alone is not proof of the language or trust boundary.
+
+Each migration must be independently reviewable and must not authorize privileged page-table writes, resource reclamation, or changes to established security gates. Record commands, actual results and remaining differences before retiring a tool.
+
 ## Choose a contribution path
 
 - **Documentation and research:** Fix reproducibility gaps, clarify hardware assumptions, check technical references, improve the contributor experience.
