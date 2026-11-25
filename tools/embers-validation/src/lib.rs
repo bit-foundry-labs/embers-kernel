@@ -29,6 +29,7 @@ pub enum Error {
     Count,
     Flags,
     Overlap,
+    SharedLoadPage,
     Entry,
     SerialMetadata,
     PhysicalRange,
@@ -216,6 +217,14 @@ pub fn parse_loads(data: &[u8]) -> Result<[LoadSegment; 3], Error> {
         if end(pair[0].vaddr, pair[0].memsz) > u128::from(pair[1].vaddr) {
             return Err(Error::Overlap);
         }
+        // Distinct linker permissions must not occupy the same 4 KiB page.
+        // The inclusive last byte is representable even when the exclusive
+        // endpoint is 2^64. Nonempty ranges were checked above.
+        let last_page = (end(pair[0].vaddr, pair[0].memsz) - 1) / u128::from(PAGE_BYTES);
+        let next_page = u128::from(pair[1].vaddr) / u128::from(PAGE_BYTES);
+        if last_page >= next_page {
+            return Err(Error::SharedLoadPage);
+        }
     }
     if entry < loads[0].vaddr || u128::from(entry) >= end(loads[0].vaddr, loads[0].memsz) {
         return Err(Error::Entry);
@@ -352,6 +361,16 @@ mod tests {
     }
 
     #[test]
+    fn rejects_every_truncated_load_file_extent() {
+        let data = fixture();
+        let final_file_end = 3 * PAGE_BYTES as usize + 32;
+        for len in 64 + 3 * 56..final_file_end {
+            assert!(parse_loads(&data[..len]).is_err(), "length {len}");
+        }
+        assert!(parse_loads(&data[..final_file_end]).is_ok());
+    }
+
+    #[test]
     fn rejects_bad_flags_and_overlap() {
         let mut data = fixture();
         put(&mut data, 68, &7_u32.to_le_bytes());
@@ -362,6 +381,43 @@ mod tests {
         let mut data = fixture();
         put(&mut data, 64 + 56 + 16, &LINK_BASE.to_le_bytes());
         assert_eq!(parse_loads(&data), Err(Error::Overlap));
+    }
+
+    #[test]
+    fn rejects_separate_segments_with_different_permissions_on_one_page() {
+        for index in 0..2 {
+            let mut data = fixture();
+            let next = 64 + (index + 1) * 56;
+            let shared_offset = (index as u64 + 1) * PAGE_BYTES + 0x180;
+            let shared_vaddr = LINK_BASE + index as u64 * PAGE_BYTES + 0x180;
+            put(&mut data, next + 8, &shared_offset.to_le_bytes());
+            put(&mut data, next + 16, &shared_vaddr.to_le_bytes());
+            assert_eq!(parse_loads(&data), Err(Error::SharedLoadPage));
+        }
+    }
+
+    #[test]
+    fn accepts_non_page_aligned_segment_when_its_page_is_separate() {
+        let mut data = fixture();
+        let second = 64 + 56;
+        put(
+            &mut data,
+            second + 8,
+            &(2 * PAGE_BYTES + 0x180).to_le_bytes(),
+        );
+        put(
+            &mut data,
+            second + 16,
+            &(LINK_BASE + PAGE_BYTES + 0x180).to_le_bytes(),
+        );
+        assert!(parse_loads(&data).is_ok());
+    }
+
+    #[test]
+    fn accepts_adjacent_segments_at_page_boundary() {
+        let mut data = fixture();
+        put(&mut data, 64 + 40, &PAGE_BYTES.to_le_bytes());
+        assert!(parse_loads(&data).is_ok());
     }
 
     #[test]
