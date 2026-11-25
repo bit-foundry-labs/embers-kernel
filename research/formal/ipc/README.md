@@ -28,3 +28,15 @@ Mutants stop at the first violation; counts are not their total reachable states
 This slice does not represent bytes, actual copy faults or partial disclosure, buffer permissions, authenticated callers, generations/reuse, delegation, explicit budget balances, error precedence, multiple endpoints, starvation, or hardware. A rejected commit is disabled in the abstract transition system; explicit typed error and cleanup behavior is not modeled (abort is separate). Copy failure retains the queue but this does not establish actual confidentiality. The model cannot establish bounded real execution, complete linearizability, kernel memory safety, or secure IPC. A finite model can have omitted transitions and weak assertions; the negative controls demonstrate sensitivity only to four selected faults.
 
 Next: add an explicit admission/commit rejection and cleanup transition, and a generation-tagged reuse model with stale-handle denial. Later model disclosure and mapping lifetimes separately before attempting real user copies. No changes to the M06 pre-write gate.
+
+## Rust reference implementation (primary implementation research)
+
+The dependency-free [Rust integration test](../../../experiments/rust-policy-guard/tests/ipc_research.rs) uses `no_std`, forbids unsafe code, and models a single endpoint with two actors, two fixed queue slots, four-byte payload capacity, bounded staging and one exclusive receive reservation. Generation-tagged handles and distinct send/receive operation tickets reject stale operations; checked counters refuse wraparound. A rejected valid-ticket commit releases exactly its staging hold. This is a serialized host-test model, not production IPC or a protected capability table.
+
+Run the focused suite from the repository root:
+
+    cargo test --manifest-path experiments/rust-policy-guard/Cargo.toml --test ipc_research
+
+The existing policy-guard workflow also runs cargo fmt, cargo test and Clippy. Nine authored tests cover ownership/FIFO, revoked and full-queue commit cleanup, tracked receive completion, copy-failure retention, zero/oversized/short messages, closure/reuse, generation/serial exhaustion, and stale/foreign operation tickets. Rust toolchain was unavailable locally; compilation, formatting, tests and lints remain unverified until exact-head CI is inspected.
+
+The Python state explorer above remains an independent abstract reference; its counts are not Rust test results. No differential test has been implemented. The Rust model assumes authenticated actors, trusted mint/revoke/lifecycle operations, atomic serialized transitions and simulated copy completion. It does not model actual mapping stability, partial byte disclosure, cancellation, delegation, multi-endpoint budgets, physical cleanup or concurrent synchronization. No kernel changes, dependencies or new workflows.
